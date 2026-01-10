@@ -1,0 +1,79 @@
+{
+  "request_id": "req-fastapi-001",
+  "total_questions": 3,
+  "total_batches": 1,
+  "batches": [
+    {
+      "batch_number": 1,
+      "answers": [
+        {
+          "question_id": "Q-001",
+          "question_text": "How is customer data encrypted at rest?",
+          "answer": "Customer data at rest is encrypted using AES-256 encryption. Encryption keys are managed through AWS KMS (Key Management Service) with a 90-day rotation policy. Database backups are also encrypted and stored in separate regions. Additionally, field-level encryption is implemented specifically for PII (Personally Identifiable Information) data.",
+          "confidence": "high",
+          "confidence_score": 0.95,
+          "citations": [
+            {
+              "doc_id": "DOC-001",
+              "doc_title": "SecureCloud Data Protection Policy",
+              "relevant_excerpt": "All customer data encrypted using AES-256 at rest",
+              "relevance_score": 1.0
+            },
+            {
+              "doc_id": "DOC-001",
+              "doc_title": "SecureCloud Data Protection Policy",
+              "relevant_excerpt": "Encryption keys in AWS KMS with 90-day rotation",
+              "relevance_score": 0.9
+            },
+            {
+              "doc_id": "DOC-001",
+              "doc_title": "SecureCloud Data Protection Policy",
+              "relevant_excerpt": "Database backups encrypted in separate regions",
+              "relevance_score": 0.8
+            },
+            {
+              "doc_id": "DOC-001",
+              "doc_title": "SecureCloud Data Protection Policy",
+              "relevant_excerpt": "Field-level encryption for PII data",
+              "relevance_score": 0.7
+            }
+          ],
+          "reasoning": "All citations directly address encryption at rest aspects. Citation 1 provides the core encryption standard (AES-256), Citation 2 covers key management and rotation, Citation 3 addresses backup encryption, and Citation 4 specifies additional protection for sensitive data. The citations are consistent, from the same authoritative document, and collectively provide comprehensive coverage of the question."
+        },
+        {
+          "question_id": "Q-002",
+          "question_text": "What access control mechanisms are in place?",
+          "answer": "Our organization implements a comprehensive access control framework based on the following mechanisms: 1) Role-Based Access Control (RBAC) deployed across all systems, ensuring users receive permissions appropriate to their organizational roles. 2) Mandatory Multi-Factor Authentication (MFA) for all user access, providing an additional layer of security beyond passwords. 3) A formal approval process for privileged access, requiring manager authorization before elevated permissions are granted. 4) Complete logging and monitoring of all access activities through our Splunk SIEM platform, enabling real-time detection and forensic analysis. 5) Implementation of a zero-trust architecture, which assumes no implicit trust and continuously validates access requests regardless of their origin.",
+          "confidence": "high",
+          "confidence_score": 1.0,
+          "citations": [
+            {
+              "doc_id": "DOC-002",
+              "doc_title": "SecureCloud Access Control Standards",
+              "relevant_excerpt": "Access control measures:\n- Role-Based Access Control (RBAC) across all systems\n- Multi-factor authentication (MFA) mandatory\n- Privileged access requires manager approval\n- All access logged and monitored via Splunk SIEM\n- Zero-trust architecture implemented",
+              "relevance_score": 1.0
+            }
+          ],
+          "reasoning": "The citation provides direct, comprehensive coverage of multiple access control mechanisms with explicit details about each control. The relevance score of 1.0 indicates perfect alignment with the question, and all components mentioned in the citation directly answer the question about access control mechanisms in place."
+        },
+        {
+          "question_id": "Q-003",
+          "question_text": "What compliance certifications do you hold?",
+          "answer": "Our organization maintains the following compliance certifications: SOC 2 Type II (with annual audits), ISO 27001:2022 certification, GDPR compliance for EU data processing, and HIPAA compliance with a Business Associate Agreement (BAA) available upon request.",
+          "confidence": "high",
+          "confidence_score": 1.0,
+          "citations": [
+            {
+              "doc_id": "DOC-003",
+              "doc_title": "SecureCloud Compliance",
+              "relevant_excerpt": "Certifications maintained:\n- SOC 2 Type II (annual audit)\n- ISO 27001:2022 certified\n- GDPR compliant for EU data\n- HIPAA compliant with BAA available",
+              "relevance_score": 1.0
+            }
+          ],
+          "reasoning": "The citation provides a direct and complete list of certifications with high relevance score (1.0), covering all aspects of the question without requiring any inference."
+        }
+      ]
+    }
+  ],
+  "status": "completed"
+}
