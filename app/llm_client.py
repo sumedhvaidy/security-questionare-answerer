@@ -1,0 +1,83 @@
+"""
+Fireworks AI LLM client for making inference requests.
+"""
+import httpx
+import json
+from typing import Optional
+
+from app.config import settings
+
+
+class FireworksClient:
+    """Client for Fireworks AI API."""
+    
+    def __init__(self):
+        self.base_url = settings.fireworks_base_url
+        self.headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {settings.fireworks_api_key}"
+        }
+    
+    async def chat_completion(
+        self,
+        messages: list[dict],
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        response_format: Optional[dict] = None
+    ) -> dict:
+        """
+        Make a chat completion request to Fireworks AI.
+        
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            max_tokens: Override default max tokens
+            temperature: Override default temperature
+            response_format: Optional JSON schema for structured output
+            
+        Returns:
+            The API response as a dict
+        """
+        payload = {
+            "model": settings.fireworks_model,
+            "max_tokens": max_tokens or settings.max_tokens,
+            "temperature": temperature or settings.temperature,
+            "messages": messages
+        }
+        
+        if response_format:
+            payload["response_format"] = response_format
+        
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                self.base_url,
+                headers=self.headers,
+                json=payload
+            )
+            
+            # Better error handling
+            if response.status_code != 200:
+                error_text = response.text
+                print(f"❌ Fireworks API Error: {response.status_code}")
+                print(f"   Response: {error_text}")
+                response.raise_for_status()
+            
+            return response.json()
+    
+    def extract_content(self, response: dict) -> str:
+        """Extract the content from a chat completion response."""
+        return response["choices"][0]["message"]["content"]
+    
+    def parse_json_response(self, response: dict) -> dict:
+        """Extract and parse JSON content from a response."""
+        content = self.extract_content(response)
+        # Handle potential markdown code blocks
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0]
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0]
+        return json.loads(content.strip())
+
+
+# Singleton instance
+llm_client = FireworksClient()

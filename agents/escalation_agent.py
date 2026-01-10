@@ -7,7 +7,7 @@ from typing import List, Dict, Optional
 import httpx
 import json
 from database import db
-from models.citation_request import (
+from models.request_for_escalation_agent import (
     EscalationRequest, 
     EscalationResponse, 
     EscalationResult, 

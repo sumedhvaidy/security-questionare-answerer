@@ -4,20 +4,27 @@ requirements-dev.txt
 setup.sh
 test_escalation_agent_json_request
 
+# Environment
+.env
+.env.local
+.venv/
+venv/
+env/
+ENV/
+
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-env/
-venv/
-ENV/
-.venv
+build/
+dist/
+*.egg-info/
 
 # IDE
-.vscode/
 .idea/
+.vscode/
 *.swp
 *.swo
 *~
@@ -25,7 +32,3 @@ ENV/
 # OS
 .DS_Store
 Thumbs.db
-
-# Environment
-.env
-.env.local
