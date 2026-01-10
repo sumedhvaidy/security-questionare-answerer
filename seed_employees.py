@@ -3,10 +3,13 @@ Script to seed MongoDB with fake employee data for the startup
 """
 import asyncio
 from database import db
-from models.employee import EmployeeCreate
 from motor.motor_asyncio import AsyncIOMotorCollection
 import os
-from datetime import datetime
+from datetime import datetime, timezone
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 # Fake employee data for the startup
@@ -78,11 +81,21 @@ FAKE_EMPLOYEES = [
 ]
 
 
-async def seed_employees(mongodb_uri: str, db_name: str = "security_qa"):
+async def seed_employees(mongodb_uri: str, db_name: str = "Employees"):
     """Seed the employees collection with fake employee data"""
     await db.connect(mongodb_uri, db_name)
     
     employees_collection: AsyncIOMotorCollection = db.database.employees
+    
+    # Check if collection exists (it will be created automatically on first insert if not)
+    try:
+        collection_list = await db.database.list_collection_names()
+        if "employees" not in collection_list:
+            print(f"Collection 'employees' does not exist. It will be created on first insert.")
+        else:
+            print(f"Collection 'employees' already exists.")
+    except Exception as e:
+        print(f"Note: Could not check collections (may be empty DB): {e}")
     
     # Clear existing employees (optional - remove if you want to keep existing data)
     # await employees_collection.delete_many({})
@@ -93,7 +106,7 @@ async def seed_employees(mongodb_uri: str, db_name: str = "security_qa"):
         existing = await employees_collection.find_one({"email": employee_data["email"]})
         
         if not existing:
-            employee_data["created_at"] = datetime.utcnow()
+            employee_data["created_at"] = datetime.now(timezone.utc)
             result = await employees_collection.insert_one(employee_data)
             inserted_count += 1
             print(f"Inserted employee: {employee_data['name']} ({employee_data['email']})")
@@ -110,14 +123,19 @@ async def seed_employees(mongodb_uri: str, db_name: str = "security_qa"):
 
 
 if __name__ == "__main__":
-    import sys
+    # Get MongoDB URI from environment variable
+    mongodb_uri = os.getenv("MONGODB_URI")
     
-    if len(sys.argv) < 2:
-        print("Usage: python seed_employees.py <MONGODB_URI> [DB_NAME]")
-        print("Example: python seed_employees.py 'mongodb+srv://user:pass@cluster.mongodb.net/' security_qa")
+    if not mongodb_uri:
+        print("Error: MONGODB_URI environment variable not set")
+        print("Please set MONGODB_URI in your .env file or environment")
+        import sys
         sys.exit(1)
     
-    mongodb_uri = sys.argv[1]
-    db_name = sys.argv[2] if len(sys.argv) > 2 else "security_qa"
+    # Use "Employees" as the database name
+    db_name = "Employees"
+    
+    print(f"Using MongoDB URI: {mongodb_uri[:50]}...")
+    print(f"Using database name: {db_name}\n")
     
     asyncio.run(seed_employees(mongodb_uri, db_name))

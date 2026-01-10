@@ -7,6 +7,14 @@ from typing import List, Dict, Optional
 import httpx
 import json
 from database import db
+
+# Try to use Fireworks AI SDK if available
+try:
+    from fireworks.client import Fireworks
+    FIREWORKS_SDK_AVAILABLE = True
+except ImportError:
+    FIREWORKS_SDK_AVAILABLE = False
+    Fireworks = None
 from models.request_for_escalation_agent import (
     EscalationRequest, 
     EscalationResponse, 
@@ -304,56 +312,96 @@ Respond in JSON format:
     "department": "Suggested department (e.g., Security, Compliance, Engineering) or null"
 }}"""
 
-        try:
-            # Use Fireworks AI API via httpx (OpenAI-compatible endpoint)
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    f"{self.firework_base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.firework_api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": "accounts/fireworks/models/llama-v3-70b-instruct",
-                        # Try alternative models if this fails: "meta-llama/Llama-3-70b-instruct" or "fireworks/llama-v3-70b-instruct"
-                        "messages": [
-                            {
-                                "role": "system",
-                                "content": "You are an expert security analyst. Respond only with valid JSON."
-                            },
-                            {
-                                "role": "user",
-                                "content": prompt
-                            }
-                        ],
-                        "temperature": 0.3,
-                        "max_tokens": 200
-                    }
-                )
-                
-                if response.status_code != 200:
-                    raise Exception(f"Fireworks API error: {response.status_code} - {response.text}")
-                
-                response_data = response.json()
-                result_text = response_data["choices"][0]["message"]["content"].strip()
-                
-                # Extract JSON from response (handle markdown code blocks)
-                if "```json" in result_text:
-                    result_text = result_text.split("```json")[1].split("```")[0].strip()
-                elif "```" in result_text:
-                    result_text = result_text.split("```")[1].split("```")[0].strip()
-                
-                decision = json.loads(result_text)
-                return decision
+        # Note: Using model format from test_full_flow.py which works
+        # Model: accounts/fireworks/models/deepseek-v3p2
         
-        except Exception as e:
-            print(f"Firework AI error: {e}. Using threshold-based decision.")
-            # Fallback to threshold-based decision
-            return {
-                "requires_escalation": confidence < self.confidence_threshold,
-                "reason": f"Fallback: Confidence {confidence:.2f} below threshold",
-                "department": self._suggest_department_from_category(category)
-            }
+        # Use direct API calls via httpx (matching format from test_full_flow.py)
+        # Model from test_full_flow.py that works: accounts/fireworks/models/deepseek-v3p2
+        model_names = [
+            "accounts/fireworks/models/deepseek-v3p2",  # Working model from test_full_flow.py
+            "accounts/fireworks/models/llama-v3-70b-instruct",  # Alternative model
+            "fireworks/llama-v3-70b-instruct",  # Short format
+        ]
+        
+        last_error = None
+        for model_name in model_names:
+            try:
+                # Use Fireworks AI API via httpx (OpenAI-compatible endpoint)
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.post(
+                        f"{self.firework_base_url}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {self.firework_api_key}",
+                            "Content-Type": "application/json"
+                        },
+                        json={
+                            "model": model_name,
+                            "messages": [
+                                {
+                                    "role": "system",
+                                    "content": "You are an expert security analyst. Respond only with valid JSON. Do not include any explanation, only return the JSON object."
+                                },
+                                {
+                                    "role": "user",
+                                    "content": prompt
+                                }
+                            ],
+                            "temperature": 0.3,
+                            "max_tokens": 200
+                        }
+                    )
+                    
+                    if response.status_code == 200:
+                        response_data = response.json()
+                        result_text = response_data["choices"][0]["message"]["content"].strip()
+                        
+                        # Extract JSON from response
+                        if "```json" in result_text:
+                            result_text = result_text.split("```json")[1].split("```")[0].strip()
+                        elif "```" in result_text:
+                            result_text = result_text.split("```")[1].split("```")[0].strip()
+                        
+                        result_text = result_text.strip()
+                        if result_text.startswith("{"):
+                            decision = json.loads(result_text)
+                            # Only log success once per batch to reduce noise
+                            if not hasattr(self, '_fireworks_success_logged'):
+                                print(f"✅ Fireworks AI model '{model_name}' working successfully")
+                                self._fireworks_success_logged = True
+                            return decision
+                        else:
+                            last_error = f"Invalid JSON format from model {model_name}"
+                            continue
+                    elif response.status_code == 404:
+                        # Model not found, try next model silently (don't log each 404)
+                        last_error = f"Model {model_name} not found (404)"
+                        continue
+                    else:
+                        try:
+                            error_data = response.json()
+                            error_msg = error_data.get("error", {}).get("message", response.text[:100])
+                            last_error = f"Model {model_name}: {error_msg}"
+                        except:
+                            last_error = f"Model {model_name}: HTTP {response.status_code}"
+                        continue
+            except json.JSONDecodeError:
+                continue
+            except Exception as e:
+                last_error = f"Error with {model_name}: {str(e)[:50]}"
+                continue
+        
+        # If all models failed, use fallback threshold-based decision
+        # Only print warning once per batch (suppress repeated messages)
+        if not hasattr(self, '_fireworks_warning_shown'):
+            print(f"⚠️  Fireworks AI models unavailable ({last_error}). Using threshold-based escalation (confidence < {self.confidence_threshold}).")
+            print(f"   Note: Models may need to be deployed in your Fireworks AI account.")
+            self._fireworks_warning_shown = True
+        
+        return {
+            "requires_escalation": confidence < self.confidence_threshold,
+            "reason": f"Threshold-based: Confidence {confidence:.2f} {'below' if confidence < self.confidence_threshold else 'above'} threshold {self.confidence_threshold}",
+            "department": self._suggest_department_from_category(category)
+        }
     
     async def _route_to_employee(
         self, 
