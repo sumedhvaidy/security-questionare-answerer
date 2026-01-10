@@ -7,3 +7,7 @@ fireworks-ai==0.19.20
 httpx>=0.26.0
 fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
+
+# Engineer 1: Knowledge Agent dependencies
+voyageai>=0.3.0
+anthropic>=0.40.0
