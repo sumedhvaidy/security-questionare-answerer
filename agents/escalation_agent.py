@@ -24,11 +24,12 @@ class EscalationAgent:
         self.firework_base_url = "https://api.fireworks.ai/inference/v1"
     
     async def process_batch(
-        self, 
-        questions: List[str], 
-        answers: List[str], 
+        self,
+        questions: List[str],
+        answers: List[str],
         confidence_scores: List[float],
-        categories: Optional[List[str]] = None
+        categories: Optional[List[str]] = None,
+        department: Optional[str] = None
     ) -> Dict:
         """
         Process a batch of security questionnaire Q&As and determine escalations
@@ -41,6 +42,17 @@ class EscalationAgent:
         
         Returns:
             Dictionary with escalation decisions and employee routing info
+            total_questions: length of questions,
+            escalations_required: amount of escalations required,
+            results: list of results, each result is a dictionary with the following keys:
+                question: the question
+                answer: the answer
+                confidence_score: the confidence score
+                category: the category
+                requires_escalation: whether the question requires escalation
+                escalation_reason: the reason for escalation
+                routed_to: the employee that the question was routed to
+                department: the department of the employee that the question was routed to
         """
         if categories is None:
             categories = [None] * len(questions)
@@ -110,6 +122,9 @@ class EscalationAgent:
         
         Returns:
             Dictionary with escalation decision and reasoning
+            requires_escalation: true/false,
+            reason: "Brief explanation",
+            department: "Suggested department (e.g., Security, Compliance, Engineering) or null"
         """
         prompt = f"""You are a security questionnaire review system. Analyze if this Q&A pair requires human escalation.
 
@@ -198,6 +213,11 @@ Respond in JSON format:
         
         Returns:
             Employee information dictionary or None
+            id: employee id,
+            name: employee name,
+            email: employee email,
+            role: employee role,
+            department: employee department
         """
         # Determine department
         department = suggested_department or self._suggest_department_from_category(category)
@@ -249,7 +269,11 @@ Respond in JSON format:
         return None
     
     def _suggest_department_from_category(self, category: Optional[str]) -> Optional[str]:
-        """Suggest department based on question category"""
+        """
+        Suggest department based on question category
+        Returns:
+            Department (str): the department that the question is related to
+        """
         if not category:
             return None
         
