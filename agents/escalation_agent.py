@@ -1,11 +1,19 @@
 """
 Escalation Agent for handling human escalation based on confidence scores and Firework AI decisions.
 Routes questions to the right department and identifies appropriate employees.
+Accepts citation agentic AI request format.
 """
 from typing import List, Dict, Optional
 import httpx
 import json
 from database import db
+from models.citation_request import (
+    EscalationRequest, 
+    EscalationResponse, 
+    EscalationResult, 
+    AnswerItem,
+    Citation
+)
 
 
 class EscalationAgent:
@@ -25,6 +33,88 @@ class EscalationAgent:
     
     async def process_batch(
         self,
+        request: EscalationRequest
+    ) -> EscalationResponse:
+        """
+        Process an escalation request from citation agentic AI and determine escalations
+        
+        Args:
+            request: EscalationRequest from citation agentic AI with batches of answers
+        
+        Returns:
+            EscalationResponse with escalation decisions and employee routing info
+        """
+        escalation_results: List[EscalationResult] = []
+        
+        # Process all batches
+        for batch in request.batches:
+            for answer_item in batch.answers:
+                # Extract category from citations or question text
+                category = self._extract_category_from_answer(answer_item)
+                
+                # Check threshold-based escalation
+                threshold_escalation = answer_item.confidence_score < self.confidence_threshold
+                
+                # Use Firework AI to make intelligent escalation decision
+                # Include citations in the decision for better context
+                citations_context = self._format_citations_context(answer_item.citations)
+                firework_decision = await self._check_with_firework(
+                    answer_item.question_text,
+                    answer_item.answer,
+                    answer_item.confidence_score,
+                    category,
+                    citations_context=citations_context,
+                    reasoning=answer_item.reasoning
+                )
+                
+                # Final decision: escalate if either threshold or Firework says so
+                requires_escalation = threshold_escalation or firework_decision.get("requires_escalation", False)
+                
+                routed_to = None
+                department = None
+                escalation_reason = None
+                
+                if requires_escalation:
+                    # Route to appropriate employee
+                    routed_to = await self._route_to_employee(
+                        answer_item.question_text,
+                        category,
+                        firework_decision.get("department")
+                    )
+                    department = routed_to.get("department") if routed_to else None
+                    escalation_reason = firework_decision.get(
+                        "reason",
+                        f"Low confidence score: {answer_item.confidence_score:.2f}"
+                    )
+                
+                escalation_result = EscalationResult(
+                    question_id=answer_item.question_id,
+                    question_text=answer_item.question_text,
+                    answer=answer_item.answer,
+                    confidence=answer_item.confidence,
+                    confidence_score=answer_item.confidence_score,
+                    requires_escalation=requires_escalation,
+                    escalation_reason=escalation_reason,
+                    routed_to=routed_to,
+                    department=department,
+                    category=category,
+                    citations=answer_item.citations
+                )
+                
+                escalation_results.append(escalation_result)
+        
+        escalations_required = sum(1 for r in escalation_results if r.requires_escalation)
+        
+        return EscalationResponse(
+            request_id=request.request_id,
+            total_questions=request.total_questions,
+            escalations_required=escalations_required,
+            results=escalation_results,
+            status="completed"
+        )
+    
+    async def process_batch_legacy(
+        self,
         questions: List[str],
         answers: List[str],
         confidence_scores: List[float],
@@ -32,7 +122,8 @@ class EscalationAgent:
         department: Optional[str] = None
     ) -> Dict:
         """
-        Process a batch of security questionnaire Q&As and determine escalations
+        Legacy method: Process a batch of security questionnaire Q&As and determine escalations
+        Maintained for backward compatibility
         
         Args:
             questions: List of security questions
@@ -42,17 +133,6 @@ class EscalationAgent:
         
         Returns:
             Dictionary with escalation decisions and employee routing info
-            total_questions: length of questions,
-            escalations_required: amount of escalations required,
-            results: list of results, each result is a dictionary with the following keys:
-                question: the question
-                answer: the answer
-                confidence_score: the confidence score
-                category: the category
-                requires_escalation: whether the question requires escalation
-                escalation_reason: the reason for escalation
-                routed_to: the employee that the question was routed to
-                department: the department of the employee that the question was routed to
         """
         if categories is None:
             categories = [None] * len(questions)
@@ -104,12 +184,84 @@ class EscalationAgent:
             "results": escalation_results
         }
     
+    def _extract_category_from_answer(self, answer_item: AnswerItem) -> Optional[str]:
+        """
+        Extract category from citations, question text, or answer content
+        
+        Args:
+            answer_item: AnswerItem with question, answer, and citations
+        
+        Returns:
+            Suggested category string or None
+        """
+        question_lower = answer_item.question_text.lower()
+        answer_lower = answer_item.answer.lower()
+        
+        # Keywords mapping to categories
+        category_keywords = {
+            "encryption": ["encrypt", "encryption", "encrypted", "aes", "kms", "key management"],
+            "authentication": ["auth", "authenticate", "login", "credentials", "password", "jwt", "token"],
+            "authorization": ["authorize", "permission", "access control", "rbac", "role"],
+            "compliance": ["compliance", "gdpr", "soc2", "hipaa", "iso 27001", "certification"],
+            "data-protection": ["data protection", "pii", "personal data", "data privacy"],
+            "api-security": ["api", "endpoint", "rate limit", "api key"],
+            "network-security": ["network", "firewall", "vpn", "ssl", "tls"],
+            "infrastructure": ["infrastructure", "cloud", "aws", "azure", "gcp", "server"],
+            "database": ["database", "sql", "nosql", "backup", "replication"],
+            "devops": ["devops", "ci/cd", "deployment", "monitoring", "logging"]
+        }
+        
+        # Check question first
+        for category, keywords in category_keywords.items():
+            if any(keyword in question_lower for keyword in keywords):
+                return category
+        
+        # Check answer content
+        for category, keywords in category_keywords.items():
+            if any(keyword in answer_lower for keyword in keywords):
+                return category
+        
+        # Check citation titles
+        for citation in answer_item.citations:
+            citation_lower = citation.doc_title.lower()
+            for category, keywords in category_keywords.items():
+                if any(keyword in citation_lower for keyword in keywords):
+                    return category
+        
+        return None
+    
+    def _format_citations_context(self, citations: List[Citation]) -> str:
+        """
+        Format citations for context in Firework AI prompt
+        
+        Args:
+            citations: List of Citation objects
+        
+        Returns:
+            Formatted string with citation context
+        """
+        if not citations:
+            return "No citations provided."
+        
+        context_parts = []
+        for i, citation in enumerate(citations, 1):
+            excerpt = citation.relevant_excerpt[:200] + "..." if len(citation.relevant_excerpt) > 200 else citation.relevant_excerpt
+            context_parts.append(
+                f"Citation {i}: {citation.doc_title}\n"
+                f"  Excerpt: {excerpt}\n"
+                f"  Relevance: {citation.relevance_score:.2f}"
+            )
+        
+        return "\n\n".join(context_parts)
+    
     async def _check_with_firework(
         self, 
         question: str, 
         answer: str, 
         confidence: float, 
-        category: Optional[str]
+        category: Optional[str],
+        citations_context: Optional[str] = None,
+        reasoning: Optional[str] = None
     ) -> Dict:
         """
         Use Firework AI to determine if escalation is needed
@@ -119,6 +271,8 @@ class EscalationAgent:
             answer: Generated answer
             confidence: Confidence score
             category: Question category
+            citations_context: Optional formatted citations context
+            reasoning: Optional reasoning from citation agent
         
         Returns:
             Dictionary with escalation decision and reasoning
@@ -126,18 +280,22 @@ class EscalationAgent:
             reason: "Brief explanation",
             department: "Suggested department (e.g., Security, Compliance, Engineering) or null"
         """
+        citations_section = f"\n\nCitations Context:\n{citations_context}" if citations_context else ""
+        reasoning_section = f"\n\nOriginal Reasoning: {reasoning}" if reasoning else ""
+        
         prompt = f"""You are a security questionnaire review system. Analyze if this Q&A pair requires human escalation.
 
 Question: {question}
 Answer: {answer}
 Confidence Score: {confidence:.2f}
-Category: {category or "Unknown"}
+Category: {category or "Unknown"}{citations_section}{reasoning_section}
 
 Consider these factors:
 1. Is the answer complete and accurate?
 2. Does the answer address all aspects of the question?
-3. Is the confidence score appropriate for the complexity?
-4. Are there any security concerns that need human review?
+3. Are the citations relevant and sufficient?
+4. Is the confidence score appropriate for the complexity?
+5. Are there any security concerns that need human review?
 
 Respond in JSON format:
 {{
