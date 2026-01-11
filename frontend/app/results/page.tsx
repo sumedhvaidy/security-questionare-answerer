@@ -24,7 +24,10 @@ import {
   Users,
   UserPlus,
   Mail,
-  X
+  X,
+  Save,
+  FileText,
+  ExternalLink
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -45,11 +48,19 @@ interface Employee {
   expertise: string[];
 }
 
+interface Reference {
+  title: string;
+  section: string;
+  page: string;
+  relevance: number;
+}
+
 interface AnsweredQuestion extends Question {
   answer: string;
   confidence: number;
   status: "auto" | "review" | "manual";
   sources: string[];
+  references: Reference[];
   approved?: boolean;
   assignedTo?: Employee;
 }
@@ -65,6 +76,68 @@ const mockEmployees: Employee[] = [
   { id: "7", name: "Rachel Foster", title: "HR Director", department: "Human Resources", email: "r.foster@company.com", avatar: "RF", expertise: ["Employee Training", "Access Control", "Physical Security"] },
   { id: "8", name: "Tom Bradley", title: "Risk Manager", department: "Risk & Compliance", email: "t.bradley@company.com", avatar: "TB", expertise: ["Vendor Management", "Compliance", "Business Continuity"] },
 ];
+
+// Generate references based on category
+const generateReferences = (category: string): Reference[] => {
+  const refMap: Record<string, Reference[]> = {
+    "Access Control": [
+      { title: "Information Security Policy", section: "Section 4.2 - Access Management", page: "p. 23-28", relevance: 95 },
+      { title: "IAM Procedure Manual", section: "Chapter 3 - User Provisioning", page: "p. 12-15", relevance: 88 },
+    ],
+    "Data Protection": [
+      { title: "Data Protection Policy", section: "Section 2.1 - Data Classification", page: "p. 8-14", relevance: 92 },
+      { title: "Encryption Standards Guide", section: "Appendix A - Key Management", page: "p. 45-52", relevance: 85 },
+    ],
+    "Incident Response": [
+      { title: "Incident Response Plan", section: "Section 5 - Response Procedures", page: "p. 18-32", relevance: 96 },
+      { title: "Security Operations Manual", section: "Chapter 7 - Escalation Matrix", page: "p. 28-30", relevance: 82 },
+    ],
+    "Vendor Management": [
+      { title: "Third-Party Risk Policy", section: "Section 3 - Vendor Assessment", page: "p. 15-22", relevance: 90 },
+      { title: "Procurement Guidelines", section: "Appendix C - Security Checklist", page: "p. 67-70", relevance: 78 },
+    ],
+    "Compliance": [
+      { title: "Compliance Framework Doc", section: "Section 1 - Regulatory Overview", page: "p. 5-18", relevance: 94 },
+      { title: "Audit Procedures Manual", section: "Chapter 4 - Evidence Collection", page: "p. 34-42", relevance: 88 },
+    ],
+    "Network Security": [
+      { title: "Network Security Architecture", section: "Section 2 - Segmentation Design", page: "p. 12-25", relevance: 93 },
+      { title: "Firewall Configuration Guide", section: "Chapter 5 - Rule Management", page: "p. 38-45", relevance: 86 },
+    ],
+    "Employee Training": [
+      { title: "Security Awareness Program", section: "Section 2 - Training Curriculum", page: "p. 8-15", relevance: 91 },
+      { title: "HR Policy Handbook", section: "Chapter 12 - Security Obligations", page: "p. 78-82", relevance: 84 },
+    ],
+    "Physical Security": [
+      { title: "Physical Security Policy", section: "Section 3 - Access Controls", page: "p. 14-22", relevance: 95 },
+      { title: "Data Center Operations", section: "Chapter 2 - Entry Procedures", page: "p. 8-12", relevance: 89 },
+    ],
+    "Business Continuity": [
+      { title: "BCP Master Document", section: "Section 4 - Recovery Procedures", page: "p. 28-45", relevance: 92 },
+      { title: "Disaster Recovery Plan", section: "Appendix B - RTO/RPO Matrix", page: "p. 56-58", relevance: 88 },
+    ],
+    "Application Security": [
+      { title: "Secure SDLC Guidelines", section: "Section 3 - Security Testing", page: "p. 18-28", relevance: 94 },
+      { title: "Code Review Standards", section: "Chapter 6 - Security Checklist", page: "p. 42-48", relevance: 87 },
+    ],
+    "Logging & Monitoring": [
+      { title: "Logging Standards Doc", section: "Section 2 - Event Categories", page: "p. 10-18", relevance: 93 },
+      { title: "SIEM Operations Manual", section: "Chapter 4 - Alert Triage", page: "p. 24-32", relevance: 86 },
+    ],
+    "Cloud Security": [
+      { title: "Cloud Security Policy", section: "Section 3 - Configuration Standards", page: "p. 15-28", relevance: 91 },
+      { title: "CSPM Implementation Guide", section: "Chapter 2 - Baseline Controls", page: "p. 12-20", relevance: 85 },
+    ],
+    "Identity Management": [
+      { title: "Identity Governance Policy", section: "Section 2 - Lifecycle Management", page: "p. 8-16", relevance: 94 },
+      { title: "SSO Implementation Guide", section: "Chapter 3 - Federation Setup", page: "p. 18-25", relevance: 82 },
+    ],
+  };
+  
+  return refMap[category] || [
+    { title: "General Security Policy", section: "Section 1 - Overview", page: "p. 1-10", relevance: 75 },
+  ];
+};
 
 // Find suggested reviewer based on category
 const getSuggestedReviewer = (category: string): Employee => {
@@ -89,7 +162,7 @@ const getSuggestedReviewer = (category: string): Employee => {
   return mockEmployees.find(e => e.name === name) || mockEmployees[0];
 };
 
-// Demo answers with varying confidence levels - designed for 95 green, ~18 yellow, ~7 red
+// Demo answers - distribution: ~95 green, ~23 yellow, 2 red
 const generateDemoAnswers = (questions: Question[]): AnsweredQuestion[] => {
   const highConfidenceAnswers: Record<string, { answer: string; baseConfidence: number; sources: string[] }> = {
     "access control": {
@@ -142,62 +215,13 @@ const generateDemoAnswers = (questions: Question[]): AnsweredQuestion[] => {
       baseConfidence: 98,
       sources: ["Compliance Certifications", "Audit Reports"]
     },
-    "password": {
-      answer: "Password policy requires minimum 14 characters with complexity requirements. Passwords expire every 90 days and cannot be reused for 12 generations.",
-      baseConfidence: 96,
-      sources: ["Password Policy", "Authentication Standards"]
-    },
-    "firewall": {
-      answer: "Next-generation firewalls are deployed at all network perimeters with default-deny policies. Rules are reviewed quarterly and changes require CAB approval.",
-      baseConfidence: 94,
-      sources: ["Network Security Architecture", "Firewall Management Procedure"]
-    },
-    "vpn": {
-      answer: "All remote access requires VPN connection using IPSec or SSL VPN with MFA. Split tunneling is disabled and connections are monitored for anomalies.",
-      baseConfidence: 95,
-      sources: ["Remote Access Policy", "VPN Configuration Standards"]
-    },
-    "sso": {
-      answer: "Single sign-on is implemented using SAML 2.0 and OAuth 2.0 protocols across all enterprise applications. Integration with our identity provider ensures centralized access management.",
-      baseConfidence: 93,
-      sources: ["Identity Management Policy", "SSO Implementation Guide"]
-    },
-    "dlp": {
-      answer: "Data Loss Prevention tools monitor email, web uploads, USB devices, and cloud storage. Policies prevent transmission of PII, financial data, and intellectual property outside approved channels.",
-      baseConfidence: 91,
-      sources: ["DLP Policy", "Data Classification Guidelines"]
-    },
   };
 
-  const mediumConfidenceAnswers: Record<string, { answer: string; baseConfidence: number; sources: string[] }> = {
-    "vendor": {
-      answer: "Third-party vendors undergo comprehensive security assessments including SOC 2 report reviews, security questionnaires, and periodic on-site audits. High-risk vendors are reviewed annually.",
-      baseConfidence: 78,
-      sources: ["Vendor Management Policy"]
-    },
-    "network": {
-      answer: "Our network is segmented using a zero-trust architecture with microsegmentation. Each segment is protected by next-generation firewalls with IDS/IPS capabilities.",
-      baseConfidence: 82,
-      sources: ["Network Security Architecture Doc"]
-    },
-    "continuity": {
-      answer: "We maintain a comprehensive business continuity plan with defined RPO (4 hours) and RTO (8 hours). The plan is tested bi-annually through simulation exercises.",
-      baseConfidence: 76,
-      sources: ["BCP Document v2.1"]
-    },
-    "sdlc": {
-      answer: "Our secure SDLC includes threat modeling, code reviews, SAST/DAST scanning, and penetration testing before each release. All developers complete secure coding training.",
-      baseConfidence: 84,
-      sources: ["SDLC Security Guidelines", "Dev Security Training Materials"]
-    },
-    "classification": {
-      answer: "Data is classified into four tiers: Public, Internal, Confidential, and Restricted. Each tier has specific handling, storage, and transmission requirements defined in our data classification policy.",
-      baseConfidence: 79,
-      sources: ["Data Classification Policy"]
-    },
-  };
-
-  const lowConfidenceTopics = ["geographically distributed", "bug bounty", "mean time to detect", "multi-cloud", "anomaly detection capabilities"];
+  const totalQuestions = questions.length;
+  // Force exactly 2 red, ~23 yellow, rest green
+  const redCount = 2;
+  const yellowCount = Math.min(23, Math.floor(totalQuestions * 0.19));
+  const greenCount = totalQuestions - redCount - yellowCount;
 
   return questions.map((q, index) => {
     const questionLower = q.question.toLowerCase();
@@ -207,42 +231,37 @@ const generateDemoAnswers = (questions: Question[]): AnsweredQuestion[] => {
       sources: ["General Security Policy"]
     };
 
-    // Check for low confidence topics first (for red items)
-    const isLowConfidence = lowConfidenceTopics.some(topic => questionLower.includes(topic));
-    if (isLowConfidence) {
-      matchedAnswer = {
-        answer: "This capability requires further documentation and verification from our technical teams. We recommend consulting with the relevant department heads for accurate information.",
-        baseConfidence: 62,
-        sources: ["Pending Documentation"]
-      };
-    } else {
-      // Check for medium confidence
-      for (const [keyword, answerData] of Object.entries(mediumConfidenceAnswers)) {
-        if (questionLower.includes(keyword)) {
-          matchedAnswer = answerData;
-          break;
-        }
-      }
-      // Check for high confidence
-      for (const [keyword, answerData] of Object.entries(highConfidenceAnswers)) {
-        if (questionLower.includes(keyword)) {
-          matchedAnswer = answerData;
-          break;
-        }
+    // Match keywords for better answers
+    for (const [keyword, answerData] of Object.entries(highConfidenceAnswers)) {
+      if (questionLower.includes(keyword)) {
+        matchedAnswer = answerData;
+        break;
       }
     }
 
-    // Add slight variation
-    let confidence = matchedAnswer.baseConfidence + (Math.random() - 0.5) * 4;
+    // Determine confidence based on position to ensure proper distribution
+    let confidence: number;
+    let status: "auto" | "review" | "manual";
     
-    // Force distribution: 95 green, ~18 yellow, ~7 red out of 120
-    // Green: indices 0-94, Yellow: 95-112, Red: 113-119
-    if (index < 95) {
-      confidence = Math.max(90, Math.min(99, 92 + Math.random() * 7));
-    } else if (index < 113) {
-      confidence = Math.max(75, Math.min(89, 78 + Math.random() * 10));
-    } else {
-      confidence = Math.max(55, Math.min(74, 60 + Math.random() * 12));
+    // Last 2 questions are RED (manual)
+    if (index >= totalQuestions - redCount) {
+      confidence = 58 + Math.random() * 12; // 58-70%
+      status = "manual";
+      matchedAnswer = {
+        answer: "This specific requirement needs verification from our technical teams. The current documentation does not fully address this capability and may require additional policy development or system configuration review.",
+        baseConfidence: 65,
+        sources: ["Pending Documentation Review"]
+      };
+    }
+    // Next ~23 before that are YELLOW (review)
+    else if (index >= totalQuestions - redCount - yellowCount) {
+      confidence = 76 + Math.random() * 12; // 76-88%
+      status = "review";
+    }
+    // Rest are GREEN (auto)
+    else {
+      confidence = 90 + Math.random() * 9; // 90-99%
+      status = "auto";
     }
 
     const roundedConfidence = Math.round(confidence);
@@ -251,8 +270,9 @@ const generateDemoAnswers = (questions: Question[]): AnsweredQuestion[] => {
       ...q,
       answer: matchedAnswer.answer,
       confidence: roundedConfidence,
-      status: roundedConfidence >= 90 ? "auto" : roundedConfidence >= 75 ? "review" : "manual",
-      sources: matchedAnswer.sources
+      status,
+      sources: matchedAnswer.sources,
+      references: generateReferences(q.category)
     };
   });
 };
@@ -268,6 +288,8 @@ export default function ResultsPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [showTriageModal, setShowTriageModal] = useState(false);
   const [selectedForTriage, setSelectedForTriage] = useState<AnsweredQuestion | null>(null);
+  const [editingQuestion, setEditingQuestion] = useState<AnsweredQuestion | null>(null);
+  const [editedAnswer, setEditedAnswer] = useState("");
 
   useEffect(() => {
     const stored = localStorage.getItem("secureOS_questions");
@@ -319,6 +341,21 @@ export default function ResultsPage() {
     setShowTriageModal(true);
   };
 
+  const openEditor = (question: AnsweredQuestion) => {
+    setEditingQuestion(question);
+    setEditedAnswer(question.answer);
+  };
+
+  const saveEdit = () => {
+    if (editingQuestion) {
+      setQuestions(prev =>
+        prev.map(q => q.id === editingQuestion.id ? { ...q, answer: editedAnswer } : q)
+      );
+      setEditingQuestion(null);
+      setEditedAnswer("");
+    }
+  };
+
   const getConfidenceColor = (confidence: number) => {
     if (confidence >= 90) return "text-emerald-600";
     if (confidence >= 75) return "text-amber-600";
@@ -345,6 +382,7 @@ export default function ResultsPage() {
       Confidence: `${q.confidence}%`,
       Status: q.status,
       Sources: q.sources.join(", "),
+      References: q.references.map(r => `${r.title} - ${r.section}`).join("; "),
       AssignedTo: q.assignedTo?.name || ""
     }));
 
@@ -371,7 +409,7 @@ export default function ResultsPage() {
       <nav className="sticky top-0 z-50 backdrop-blur-xl bg-white/80 border-b border-slate-200/80">
         <div className="flex items-center justify-between px-8 py-4 max-w-7xl mx-auto">
           <Link href="/" className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[var(--accent)] to-[var(--accent-secondary)] flex items-center justify-center shadow-md shadow-sky-200/50">
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-sky-500 to-cyan-500 flex items-center justify-center shadow-md shadow-sky-200/50">
               <Shield className="w-5 h-5 text-white" />
             </div>
             <span className="text-lg font-semibold text-slate-800">SecureOS</span>
@@ -529,7 +567,7 @@ export default function ResultsPage() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                transition={{ delay: index * 0.02 }}
+                transition={{ delay: Math.min(index * 0.02, 0.5) }}
                 layout
                 className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow"
               >
@@ -581,6 +619,16 @@ export default function ResultsPage() {
                           Triage
                         </button>
                       )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEditor(q);
+                        }}
+                        className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                        title="Edit answer"
+                      >
+                        <Edit3 className="w-4 h-4 text-slate-400" />
+                      </button>
                       <button className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
                         {expandedId === q.id ? (
                           <ChevronUp className="w-5 h-5 text-slate-400" />
@@ -611,8 +659,32 @@ export default function ResultsPage() {
                           <p className="text-slate-700 text-sm leading-relaxed">{q.answer}</p>
                         </div>
 
+                        {/* References Section */}
+                        <div className="mb-5 p-4 bg-white rounded-lg border border-slate-200">
+                          <div className="flex items-center gap-2 mb-3">
+                            <FileText className="w-4 h-4 text-slate-500" />
+                            <span className="text-sm font-medium text-slate-700">Policy References</span>
+                          </div>
+                          <div className="space-y-2">
+                            {q.references.map((ref, i) => (
+                              <div key={i} className="flex items-start justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium text-slate-800">{ref.title}</span>
+                                    <ExternalLink className="w-3 h-3 text-slate-400" />
+                                  </div>
+                                  <div className="text-xs text-slate-500 mt-0.5">{ref.section} • {ref.page}</div>
+                                </div>
+                                <span className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium">
+                                  {ref.relevance}% match
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
                         <div className="mb-5">
-                          <span className="text-xs text-slate-500 font-medium">Sources referenced:</span>
+                          <span className="text-xs text-slate-500 font-medium">Sources:</span>
                           <div className="flex flex-wrap gap-2 mt-2">
                             {q.sources.map((source, i) => (
                               <span key={i} className="text-xs px-2.5 py-1 rounded-md bg-white border border-slate-200 text-slate-600">
@@ -665,7 +737,13 @@ export default function ResultsPage() {
                                 <ThumbsUp className="w-4 h-4" />
                                 Approve
                               </button>
-                              <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-slate-600 hover:text-slate-800 transition-colors text-sm font-medium border border-slate-200 hover:border-slate-300">
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEditor(q);
+                                }}
+                                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-slate-600 hover:text-slate-800 transition-colors text-sm font-medium border border-slate-200 hover:border-slate-300"
+                              >
                                 <Edit3 className="w-4 h-4" />
                                 Edit
                               </button>
@@ -802,6 +880,86 @@ export default function ResultsPage() {
                     </button>
                   );
                 })}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Editor Modal */}
+      <AnimatePresence>
+        {editingQuestion && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setEditingQuestion(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-6 border-b border-slate-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-sky-100 flex items-center justify-center">
+                      <Edit3 className="w-5 h-5 text-sky-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-800">Edit Answer</h3>
+                      <p className="text-sm text-slate-500">Modify the AI-generated response</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setEditingQuestion(null)}
+                    className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                  >
+                    <X className="w-5 h-5 text-slate-400" />
+                  </button>
+                </div>
+              </div>
+              
+              <div className="p-6 border-b border-slate-100 bg-slate-50">
+                <span className="text-xs text-sky-600 font-medium uppercase tracking-wide">{editingQuestion.category}</span>
+                <p className="text-sm text-slate-800 font-medium mt-1">{editingQuestion.question}</p>
+              </div>
+
+              <div className="p-6">
+                <label className="block text-sm font-medium text-slate-700 mb-2">Answer</label>
+                <textarea
+                  value={editedAnswer}
+                  onChange={(e) => setEditedAnswer(e.target.value)}
+                  className="w-full h-48 p-4 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400 resize-none"
+                  placeholder="Enter your answer..."
+                />
+                
+                {/* Reference hint */}
+                <div className="mt-4 p-3 bg-slate-50 rounded-lg border border-slate-100">
+                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Reference: {editingQuestion.references[0]?.title} - {editingQuestion.references[0]?.section}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
+                <button
+                  onClick={() => setEditingQuestion(null)}
+                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 bg-white border border-slate-200 rounded-lg hover:border-slate-300 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveEdit}
+                  className="px-4 py-2 text-sm font-medium text-white bg-sky-600 rounded-lg hover:bg-sky-700 transition-all flex items-center gap-2"
+                >
+                  <Save className="w-4 h-4" />
+                  Save Changes
+                </button>
               </div>
             </motion.div>
           </motion.div>
