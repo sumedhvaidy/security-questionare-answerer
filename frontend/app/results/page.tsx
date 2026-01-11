@@ -20,110 +20,68 @@ import {
   BarChart3,
   Clock,
   Check,
-  RefreshCw
+  RefreshCw,
+  FileSpreadsheet,
+  FileJson,
+  Zap,
+  Mail,
+  User
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-interface Question {
+interface EscalationEmployee {
+  name: string;
+  email: string;
+  department: string;
+  title?: string;
+}
+
+interface AnsweredQuestion {
   id: number;
   category: string;
   question: string;
-}
-
-interface AnsweredQuestion extends Question {
   answer: string;
   confidence: number;
   status: "auto" | "review" | "manual";
   sources: string[];
   approved?: boolean;
+  needs_escalation?: boolean;
+  escalation_reason?: string;
+  reasoning?: string;
+  routed_to?: EscalationEmployee;
+  informed?: boolean;
 }
 
-// Demo answers with varying confidence levels
-const generateDemoAnswers = (questions: Question[]): AnsweredQuestion[] => {
+// Demo answers fallback
+const generateDemoAnswers = (questions: any[]): AnsweredQuestion[] => {
   const answers: Record<string, { answer: string; baseConfidence: number; sources: string[] }> = {
     "access control": {
-      answer: "Yes, our organization maintains a comprehensive access control policy aligned with ISO 27001 and SOC 2 requirements. The policy is reviewed annually and includes provisions for role-based access control (RBAC), least privilege principles, and regular access reviews.",
+      answer: "Yes, our organization maintains a comprehensive access control policy aligned with ISO 27001 and SOC 2 requirements. The policy is reviewed annually.",
       baseConfidence: 95,
       sources: ["Information Security Policy v3.2", "Access Control Procedure Doc"]
     },
     "mfa": {
-      answer: "Yes, multi-factor authentication (MFA) is mandatory for all users across all systems. We utilize a combination of hardware tokens, authenticator apps, and biometric verification where applicable.",
+      answer: "Yes, multi-factor authentication (MFA) is mandatory for all users across all systems.",
       baseConfidence: 98,
       sources: ["Authentication Standards", "Security Policy Section 4.2"]
     },
     "encryption": {
-      answer: "We employ AES-256 encryption for data at rest and TLS 1.3 for data in transit. Our key management system follows NIST guidelines with regular key rotation every 90 days.",
+      answer: "We employ AES-256 encryption for data at rest and TLS 1.3 for data in transit.",
       baseConfidence: 92,
       sources: ["Encryption Standards Doc", "Data Protection Policy"]
     },
     "incident": {
-      answer: "Yes, we maintain a documented incident response plan that follows the NIST Cybersecurity Framework. Our IR team conducts quarterly tabletop exercises and annual full-scale simulations.",
+      answer: "Yes, we maintain a documented incident response plan that follows the NIST Cybersecurity Framework.",
       baseConfidence: 88,
       sources: ["Incident Response Plan", "IR Procedure Manual"]
     },
-    "backup": {
-      answer: "Our backup strategy includes daily incremental backups, weekly full backups, and monthly archival backups. All backups are encrypted and stored across multiple geographic regions with 99.99% durability.",
-      baseConfidence: 94,
-      sources: ["Backup & Recovery Procedure", "DR Plan Section 3"]
-    },
-    "vendor": {
-      answer: "Third-party vendors undergo comprehensive security assessments including SOC 2 report reviews, security questionnaires, and periodic on-site audits. High-risk vendors are reviewed annually.",
-      baseConfidence: 78,
-      sources: ["Vendor Management Policy"]
-    },
-    "audit": {
-      answer: "Security audits are conducted annually by external auditors. Additionally, we perform quarterly internal security assessments and continuous automated vulnerability scanning.",
-      baseConfidence: 91,
-      sources: ["Audit Schedule", "Compliance Calendar"]
-    },
-    "network": {
-      answer: "Our network is segmented using a zero-trust architecture with microsegmentation. Each segment is protected by next-generation firewalls with IDS/IPS capabilities.",
-      baseConfidence: 85,
-      sources: ["Network Security Architecture Doc"]
-    },
-    "training": {
-      answer: "All employees complete mandatory security awareness training upon hire and annually thereafter. This includes phishing simulations, data handling procedures, and incident reporting protocols.",
-      baseConfidence: 96,
-      sources: ["Training Policy", "HR Onboarding Checklist"]
-    },
-    "physical": {
-      answer: "Physical access to data centers is controlled through multi-factor authentication including badge access, biometrics, and PIN codes. All access is logged and monitored 24/7.",
-      baseConfidence: 89,
-      sources: ["Physical Security Policy", "Data Center Access Procedure"]
-    },
-    "continuity": {
-      answer: "We maintain a comprehensive business continuity plan with defined RPO (4 hours) and RTO (8 hours). The plan is tested bi-annually through simulation exercises.",
-      baseConfidence: 72,
-      sources: ["BCP Document v2.1"]
-    },
-    "sdlc": {
-      answer: "Our secure SDLC includes threat modeling, code reviews, SAST/DAST scanning, and penetration testing before each release. All developers complete secure coding training.",
-      baseConfidence: 87,
-      sources: ["SDLC Security Guidelines", "Dev Security Training Materials"]
-    },
-    "logging": {
-      answer: "We log all authentication events, system changes, data access, and administrative actions. Logs are retained for 1 year and analyzed by our SIEM for anomaly detection.",
-      baseConfidence: 93,
-      sources: ["Logging Standards", "SIEM Configuration Doc"]
-    },
-    "classification": {
-      answer: "Data is classified into four tiers: Public, Internal, Confidential, and Restricted. Each tier has specific handling, storage, and transmission requirements defined in our data classification policy.",
-      baseConfidence: 82,
-      sources: ["Data Classification Policy"]
-    },
-    "certification": {
-      answer: "We currently hold SOC 2 Type II, ISO 27001, and are compliant with GDPR, HIPAA, and CCPA requirements. Annual recertification audits are conducted.",
-      baseConfidence: 97,
-      sources: ["Compliance Certifications", "Audit Reports"]
-    }
   };
 
-  return questions.map((q) => {
-    // Match question to answer based on keywords
-    const questionLower = q.question.toLowerCase();
+  return questions.map((q: any) => {
+    const questionLower = q.question?.toLowerCase() || "";
     let matchedAnswer = {
-      answer: "Based on our security policies and procedures, we implement industry-standard controls to address this requirement. Our security team regularly reviews and updates these measures to ensure continued compliance with best practices and regulatory requirements.",
+      answer: "Based on our security policies, we implement industry-standard controls to address this requirement.",
       baseConfidence: 65 + Math.random() * 15,
       sources: ["General Security Policy"]
     };
@@ -135,15 +93,16 @@ const generateDemoAnswers = (questions: Question[]): AnsweredQuestion[] => {
       }
     }
 
-    // Add some variation to confidence
     const confidence = Math.min(99, Math.max(55, matchedAnswer.baseConfidence + (Math.random() - 0.5) * 10));
     const roundedConfidence = Math.round(confidence);
 
     return {
-      ...q,
+      id: q.id,
+      category: q.category || "General",
+      question: q.question,
       answer: matchedAnswer.answer,
       confidence: roundedConfidence,
-      status: roundedConfidence >= 90 ? "auto" : roundedConfidence >= 75 ? "review" : "manual",
+      status: roundedConfidence >= 90 ? "auto" : roundedConfidence >= 70 ? "review" : "manual",
       sources: matchedAnswer.sources
     };
   });
@@ -158,17 +117,38 @@ export default function ResultsPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
+  const [metadata, setMetadata] = useState<any>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editedAnswer, setEditedAnswer] = useState<string>("");
+  const [contextModalId, setContextModalId] = useState<number | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem("secureOS_questions");
-    if (!stored) {
-      router.push("/upload");
-      return;
+    // First check for API results
+    const apiResults = localStorage.getItem("secureOS_results");
+    const apiMetadata = localStorage.getItem("secureOS_metadata");
+    const demoMode = localStorage.getItem("secureOS_demo_mode");
+
+    if (apiResults && !demoMode) {
+      // Use actual API results
+      const results = JSON.parse(apiResults);
+      setQuestions(results);
+      if (apiMetadata) {
+        setMetadata(JSON.parse(apiMetadata));
+      }
+    } else {
+      // Fallback to demo mode
+      const stored = localStorage.getItem("secureOS_questions");
+      if (!stored) {
+        router.push("/upload");
+        return;
+      }
+      const parsedQuestions = JSON.parse(stored);
+      const answeredQuestions = generateDemoAnswers(parsedQuestions);
+      setQuestions(answeredQuestions);
     }
 
-    const parsedQuestions = JSON.parse(stored) as Question[];
-    const answeredQuestions = generateDemoAnswers(parsedQuestions);
-    setQuestions(answeredQuestions);
+    // Clear demo mode flag
+    localStorage.removeItem("secureOS_demo_mode");
   }, [router]);
 
   const filteredQuestions = questions.filter((q) => {
@@ -191,37 +171,87 @@ export default function ResultsPage() {
   };
 
   const handleApprove = (id: number) => {
-    setQuestions(prev => 
-      prev.map(q => q.id === id ? { ...q, approved: true, status: "auto" as const } : q)
-    );
+    setQuestions(prev => {
+      const updated = prev.map(q => q.id === id ? { ...q, approved: true, status: "auto" as const } : q);
+      // Update localStorage
+      localStorage.setItem("secureOS_results", JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const handleStartEdit = (q: AnsweredQuestion) => {
+    setEditingId(q.id);
+    setEditedAnswer(q.answer);
+  };
+
+  const handleSaveEdit = (id: number) => {
+    setQuestions(prev => {
+      const updated = prev.map(q => 
+        q.id === id ? { ...q, answer: editedAnswer, approved: false } : q
+      );
+      // Update localStorage so CSV export gets the edited answer
+      localStorage.setItem("secureOS_results", JSON.stringify(updated));
+      return updated;
+    });
+    setEditingId(null);
+    setEditedAnswer("");
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditedAnswer("");
+  };
+
+  const handleViewContext = (id: number) => {
+    setContextModalId(id);
+  };
+
+  const handleInformEmployee = async (id: number) => {
+    const question = questions.find(q => q.id === id);
+    if (!question?.routed_to) return;
+
+    // In a real app, this would send an email/notification
+    // For now, we'll just mark it as informed
+    setQuestions(prev => {
+      const updated = prev.map(q => 
+        q.id === id ? { ...q, informed: true } : q
+      );
+      localStorage.setItem("secureOS_results", JSON.stringify(updated));
+      return updated;
+    });
+
+    // Show a notification (you could use a toast library)
+    alert(`Notification sent to ${question.routed_to.name} (${question.routed_to.email})`);
   };
 
   const getConfidenceColor = (confidence: number) => {
     if (confidence >= 90) return "text-emerald-700";
-    if (confidence >= 75) return "text-amber-700";
+    if (confidence >= 70) return "text-amber-700";
     return "text-red-700";
   };
 
   const getConfidenceBg = (confidence: number) => {
     if (confidence >= 90) return "bg-emerald-100 border-emerald-300";
-    if (confidence >= 75) return "bg-amber-100 border-amber-300";
+    if (confidence >= 70) return "bg-amber-100 border-amber-300";
     return "bg-red-100 border-red-300";
   };
 
   const getStatusIcon = (status: string, confidence: number) => {
     if (status === "auto" || confidence >= 90) return <CheckCircle className="w-5 h-5 text-emerald-600" />;
-    if (status === "review" || confidence >= 75) return <AlertTriangle className="w-5 h-5 text-amber-600" />;
+    if (status === "review" || confidence >= 70) return <AlertTriangle className="w-5 h-5 text-amber-600" />;
     return <XCircle className="w-5 h-5 text-red-600" />;
   };
 
-  const handleExport = () => {
+  const handleExportJSON = () => {
     const exportData = questions.map(q => ({
       Category: q.category,
       Question: q.question,
       Answer: q.answer,
       Confidence: `${q.confidence}%`,
       Status: q.status,
-      Sources: q.sources.join(", ")
+      Sources: q.sources.join(", "),
+      NeedsEscalation: q.needs_escalation || false,
+      Reasoning: q.reasoning || ""
     }));
 
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
@@ -229,6 +259,33 @@ export default function ResultsPage() {
     const a = document.createElement("a");
     a.href = url;
     a.download = "security_questionnaire_answers.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportCSV = () => {
+    // CSV header
+    const headers = ["Category", "Question", "Answer", "Confidence", "Status", "Sources", "Needs Escalation", "Reasoning"];
+    
+    // CSV rows
+    const rows = questions.map(q => [
+      `"${q.category.replace(/"/g, '""')}"`,
+      `"${q.question.replace(/"/g, '""')}"`,
+      `"${q.answer.replace(/"/g, '""')}"`,
+      `${q.confidence}%`,
+      q.status,
+      `"${q.sources.join("; ").replace(/"/g, '""')}"`,
+      q.needs_escalation ? "Yes" : "No",
+      `"${(q.reasoning || "").replace(/"/g, '""')}"`
+    ]);
+
+    const csvContent = [headers.join(","), ...rows.map(row => row.join(","))].join("\n");
+    
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "security_questionnaire_answers.csv";
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -244,13 +301,17 @@ export default function ResultsPage() {
             </div>
             <span className="text-xl font-bold text-slate-800">SecureOS</span>
           </Link>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <Link href="/upload" className="btn-secondary py-2 px-4 text-sm flex items-center gap-2">
               <RefreshCw className="w-4 h-4" />
               New Upload
             </Link>
-            <button onClick={handleExport} className="btn-primary py-2 px-4 text-sm flex items-center gap-2">
-              <Download className="w-4 h-4" />
+            <button onClick={handleExportCSV} className="btn-secondary py-2 px-4 text-sm flex items-center gap-2">
+              <FileSpreadsheet className="w-4 h-4" />
+              Export CSV
+            </button>
+            <button onClick={handleExportJSON} className="btn-primary py-2 px-4 text-sm flex items-center gap-2">
+              <FileJson className="w-4 h-4" />
               Export JSON
             </button>
           </div>
@@ -267,6 +328,11 @@ export default function ResultsPage() {
           <h1 className="text-3xl font-bold mb-2 text-slate-800">Analysis Results</h1>
           <p className="text-slate-500">
             AI analyzed {stats.total} questions • Average confidence: {stats.avgConfidence}%
+            {metadata?.escalations_required > 0 && (
+              <span className="text-red-600 ml-2">
+                • {metadata.escalations_required} need escalation
+              </span>
+            )}
           </p>
         </motion.div>
 
@@ -292,10 +358,10 @@ export default function ResultsPage() {
               <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
                 <CheckCircle className="w-5 h-5 text-emerald-600" />
               </div>
-              <span className="text-sm text-slate-500">Auto-Answered</span>
+              <span className="text-sm text-slate-500">High Confidence</span>
             </div>
             <div className="text-3xl font-bold text-emerald-600">{stats.auto}</div>
-            <div className="text-xs text-slate-500 mt-1">High confidence (&gt;90%)</div>
+            <div className="text-xs text-slate-500 mt-1">≥90% confidence</div>
           </div>
 
           <div className="glass-card p-6">
@@ -306,7 +372,7 @@ export default function ResultsPage() {
               <span className="text-sm text-slate-500">Needs Review</span>
             </div>
             <div className="text-3xl font-bold text-amber-600">{stats.review}</div>
-            <div className="text-xs text-slate-500 mt-1">Medium confidence (75-90%)</div>
+            <div className="text-xs text-slate-500 mt-1">70-90% confidence</div>
           </div>
 
           <div className="glass-card p-6">
@@ -314,10 +380,10 @@ export default function ResultsPage() {
               <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
                 <Clock className="w-5 h-5 text-red-600" />
               </div>
-              <span className="text-sm text-slate-500">Manual Required</span>
+              <span className="text-sm text-slate-500">Low Confidence</span>
             </div>
             <div className="text-3xl font-bold text-red-600">{stats.manual}</div>
-            <div className="text-xs text-slate-500 mt-1">Low confidence (&lt;75%)</div>
+            <div className="text-xs text-slate-500 mt-1">&lt;70% - needs escalation</div>
           </div>
         </motion.div>
 
@@ -350,9 +416,9 @@ export default function ResultsPage() {
           <div className={`flex gap-2 ${showFilters ? 'flex' : 'hidden md:flex'}`}>
             {[
               { key: "all", label: "All", count: stats.total },
-              { key: "auto", label: "Auto", count: stats.auto },
-              { key: "review", label: "Review", count: stats.review },
-              { key: "manual", label: "Manual", count: stats.manual }
+              { key: "auto", label: "High", count: stats.auto },
+              { key: "review", label: "Medium", count: stats.review },
+              { key: "manual", label: "Low", count: stats.manual }
             ].map(({ key, label, count }) => (
               <button
                 key={key}
@@ -398,7 +464,7 @@ export default function ResultsPage() {
                     </div>
 
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 mb-2">
+                      <div className="flex items-center gap-3 mb-2 flex-wrap">
                         <span className="text-xs text-[var(--accent)] uppercase tracking-wide font-medium">
                           {q.category}
                         </span>
@@ -408,6 +474,11 @@ export default function ResultsPage() {
                         {q.approved && (
                           <span className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-600 flex items-center gap-1">
                             <Check className="w-3 h-3" /> Approved
+                          </span>
+                        )}
+                        {q.needs_escalation && (
+                          <span className="text-xs px-2 py-1 rounded-full bg-red-100 text-red-600 flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3" /> Needs Escalation
                           </span>
                         )}
                       </div>
@@ -443,22 +514,120 @@ export default function ResultsPage() {
                             <Sparkles className="w-4 h-4 text-[var(--accent)]" />
                             <span className="text-sm font-medium text-[var(--accent)]">AI Generated Answer</span>
                           </div>
-                          <p className="text-slate-700 leading-relaxed">{q.answer}</p>
+                          
+                          {editingId === q.id ? (
+                            <div className="space-y-3">
+                              <textarea
+                                value={editedAnswer}
+                                onChange={(e) => setEditedAnswer(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-full p-4 border border-slate-300 rounded-lg focus:outline-none focus:border-[var(--accent)] text-slate-700 min-h-[150px] resize-y"
+                                placeholder="Edit your answer..."
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSaveEdit(q.id);
+                                  }}
+                                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors text-sm"
+                                >
+                                  <Check className="w-4 h-4" />
+                                  Save Changes
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCancelEdit();
+                                  }}
+                                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-200 text-slate-700 hover:bg-slate-300 transition-colors text-sm"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-slate-700 leading-relaxed">{q.answer}</p>
+                          )}
                         </div>
+
+                        {q.reasoning && (
+                          <div className="mb-6 p-4 bg-white rounded-lg border border-slate-200">
+                            <span className="text-sm font-medium text-slate-600">Reasoning:</span>
+                            <p className="text-sm text-slate-500 mt-1">{q.reasoning}</p>
+                          </div>
+                        )}
+
+                        {q.needs_escalation && (
+                          <div className="mb-6 p-4 bg-red-50 rounded-lg border border-red-200">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-sm font-medium text-red-600 flex items-center gap-2">
+                                <AlertTriangle className="w-4 h-4" />
+                                Needs Human Review
+                              </span>
+                              {q.routed_to && !q.informed && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleInformEmployee(q.id);
+                                  }}
+                                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors text-sm"
+                                >
+                                  <Zap className="w-3 h-3" />
+                                  Inform Employee
+                                </button>
+                              )}
+                              {q.informed && (
+                                <span className="flex items-center gap-1 text-xs text-emerald-600 bg-emerald-100 px-2 py-1 rounded-full">
+                                  <Check className="w-3 h-3" /> Notified
+                                </span>
+                              )}
+                            </div>
+                            {q.escalation_reason && (
+                              <p className="text-sm text-red-500 mb-3">{q.escalation_reason}</p>
+                            )}
+                            {q.routed_to ? (
+                              <div className="mt-3 p-3 bg-white rounded-lg border border-red-200">
+                                <span className="text-xs text-slate-500 uppercase tracking-wide">Assigned To:</span>
+                                <div className="mt-2 flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-400 to-red-600 flex items-center justify-center text-white font-semibold">
+                                    {q.routed_to.name.split(' ').map(n => n[0]).join('')}
+                                  </div>
+                                  <div>
+                                    <p className="font-medium text-slate-800">{q.routed_to.name}</p>
+                                    <p className="text-sm text-slate-500">{q.routed_to.title || q.routed_to.department}</p>
+                                    <p className="text-xs text-slate-400">{q.routed_to.email}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                                <div className="flex items-center gap-2">
+                                  <User className="w-4 h-4 text-amber-600" />
+                                  <span className="text-sm text-amber-700">
+                                    No employee assigned - run <code className="bg-amber-100 px-1 rounded">python seed_employees.py</code> to add employees
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
 
                         <div className="mb-6">
                           <span className="text-sm text-slate-500">Sources referenced:</span>
                           <div className="flex flex-wrap gap-2 mt-2">
-                            {q.sources.map((source, i) => (
+                            {q.sources.length > 0 ? q.sources.map((source, i) => (
                               <span key={i} className="text-xs px-3 py-1 rounded-full bg-white border border-slate-200 text-slate-600">
                                 {source}
                               </span>
-                            ))}
+                            )) : (
+                              <span className="text-xs text-slate-400">No sources available</span>
+                            )}
                           </div>
                         </div>
 
                         <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
-                          {!q.approved && (
+                          {!q.approved && editingId !== q.id && (
                             <>
                               <button
                                 onClick={(e) => {
@@ -470,7 +639,13 @@ export default function ResultsPage() {
                                 <ThumbsUp className="w-4 h-4" />
                                 Approve Answer
                               </button>
-                              <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-slate-600 hover:text-slate-800 transition-colors text-sm border border-slate-200">
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStartEdit(q);
+                                }}
+                                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-slate-600 hover:text-slate-800 transition-colors text-sm border border-slate-200"
+                              >
                                 <Edit3 className="w-4 h-4" />
                                 Edit Answer
                               </button>
@@ -480,7 +655,13 @@ export default function ResultsPage() {
                               </button>
                             </>
                           )}
-                          <button className="flex items-center gap-2 px-4 py-2 rounded-lg text-slate-500 hover:text-slate-800 transition-colors text-sm ml-auto">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewContext(q.id);
+                            }}
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg text-slate-500 hover:text-slate-800 transition-colors text-sm ml-auto"
+                          >
                             <Eye className="w-4 h-4" />
                             View Full Context
                           </button>
@@ -516,26 +697,157 @@ export default function ResultsPage() {
         >
           <div className="flex items-center justify-center gap-3 mb-4">
             <Sparkles className="w-6 h-6 text-[var(--accent)]" />
-            <h3 className="text-xl font-semibold text-slate-800">Time Saved Summary</h3>
+            <h3 className="text-xl font-semibold text-slate-800">Analysis Summary</h3>
           </div>
           <p className="text-slate-500 mb-6">
-            SecureOS automatically answered <span className="text-[var(--accent)] font-semibold">{stats.auto} out of {stats.total}</span> questions with high confidence.
+            SecureOS answered <span className="text-emerald-600 font-semibold">{stats.auto}</span> questions with high confidence.
             <br />
-            You only need to review <span className="text-amber-600 font-semibold">{stats.review + stats.manual}</span> questions.
+            <span className="text-amber-600 font-semibold">{stats.review}</span> need review, 
+            <span className="text-red-600 font-semibold"> {stats.manual}</span> need manual attention.
           </p>
           <div className="flex items-center justify-center gap-8">
             <div className="text-center">
-              <div className="text-4xl font-bold gradient-text">{Math.round((stats.auto / stats.total) * 100) || 0}%</div>
-              <div className="text-sm text-slate-500">Automation Rate</div>
+              <div className="text-4xl font-bold gradient-text">{stats.avgConfidence}%</div>
+              <div className="text-sm text-slate-500">Avg Confidence</div>
             </div>
             <div className="w-px h-12 bg-slate-200" />
             <div className="text-center">
               <div className="text-4xl font-bold gradient-text">{Math.round(stats.total * 3.5)} min</div>
-              <div className="text-sm text-slate-500">Estimated Time Saved</div>
+              <div className="text-sm text-slate-500">Time Saved</div>
             </div>
           </div>
         </motion.div>
       </main>
+
+      {/* Context Modal */}
+      <AnimatePresence>
+        {contextModalId !== null && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setContextModalId(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden shadow-2xl"
+            >
+              {(() => {
+                const q = questions.find(q => q.id === contextModalId);
+                if (!q) return null;
+                return (
+                  <>
+                    <div className="p-6 border-b border-slate-200">
+                      <div className="flex items-center justify-between">
+                        <h2 className="text-xl font-semibold text-slate-800">Full Context</h2>
+                        <button 
+                          onClick={() => setContextModalId(null)}
+                          className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                        >
+                          <XCircle className="w-5 h-5 text-slate-400" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="p-6 overflow-y-auto max-h-[60vh] space-y-6">
+                      <div>
+                        <span className="text-xs text-[var(--accent)] uppercase tracking-wide font-medium">{q.category}</span>
+                        <h3 className="text-lg font-medium text-slate-800 mt-1">{q.question}</h3>
+                      </div>
+                      
+                      <div className="p-4 bg-slate-50 rounded-lg">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Sparkles className="w-4 h-4 text-[var(--accent)]" />
+                          <span className="text-sm font-medium text-slate-600">AI Generated Answer</span>
+                          <span className={`ml-auto text-xs px-2 py-1 rounded-full ${getConfidenceBg(q.confidence)} ${getConfidenceColor(q.confidence)}`}>
+                            {q.confidence}% confidence
+                          </span>
+                        </div>
+                        <p className="text-slate-700">{q.answer}</p>
+                      </div>
+
+                      {q.reasoning && (
+                        <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                          <span className="text-sm font-medium text-blue-700">AI Reasoning:</span>
+                          <p className="text-sm text-blue-600 mt-1">{q.reasoning}</p>
+                        </div>
+                      )}
+
+                      {q.needs_escalation && (
+                        <div className="p-4 bg-red-50 rounded-lg border border-red-200">
+                          <div className="flex items-center gap-2 mb-2">
+                            <AlertTriangle className="w-4 h-4 text-red-600" />
+                            <span className="text-sm font-medium text-red-700">Escalation Required</span>
+                          </div>
+                          <p className="text-sm text-red-600 mb-3">{q.escalation_reason || "Low confidence - needs human review"}</p>
+                          
+                          {q.routed_to ? (
+                            <div className="mt-3 p-3 bg-white rounded-lg border border-red-200">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-400 to-red-600 flex items-center justify-center text-white font-semibold text-sm">
+                                    {q.routed_to.name.split(' ').map(n => n[0]).join('')}
+                                  </div>
+                                  <div>
+                                    <p className="font-medium text-slate-800">{q.routed_to.name}</p>
+                                    <p className="text-sm text-slate-500">{q.routed_to.title || q.routed_to.department}</p>
+                                    <p className="text-xs text-slate-400">{q.routed_to.email}</p>
+                                  </div>
+                                </div>
+                                {!q.informed ? (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleInformEmployee(q.id);
+                                    }}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors text-sm"
+                                  >
+                                    <Mail className="w-4 h-4" />
+                                    Notify
+                                  </button>
+                                ) : (
+                                  <span className="flex items-center gap-1 text-sm text-emerald-600 bg-emerald-100 px-3 py-1.5 rounded-full">
+                                    <Check className="w-4 h-4" /> Notified
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                              <div className="flex items-center gap-2">
+                                <User className="w-4 h-4 text-amber-600" />
+                                <span className="text-sm text-amber-700">
+                                  No employee assigned yet
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div>
+                        <span className="text-sm font-medium text-slate-600">Sources Referenced:</span>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {q.sources.length > 0 ? q.sources.map((source, i) => (
+                            <span key={i} className="text-sm px-3 py-2 rounded-lg bg-white border border-slate-200 text-slate-600">
+                              📄 {source}
+                            </span>
+                          )) : (
+                            <span className="text-sm text-slate-400">No specific sources referenced</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

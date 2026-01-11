@@ -2,24 +2,32 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Shield, Brain, Sparkles, Database, FileCheck, Lock, Zap } from "lucide-react";
+import { Shield, Brain, Sparkles, Database, FileCheck, Lock, Zap, AlertCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 const processingSteps = [
-  { icon: Database, label: "Loading questionnaire data", duration: 1500 },
-  { icon: Brain, label: "Analyzing question context", duration: 2000 },
-  { icon: Lock, label: "Matching security policies", duration: 2500 },
-  { icon: Sparkles, label: "Generating AI responses", duration: 3000 },
-  { icon: FileCheck, label: "Calculating confidence scores", duration: 1500 },
-  { icon: Zap, label: "Finalizing results", duration: 1000 },
+  { icon: Database, label: "Loading questionnaire data", duration: 1000 },
+  { icon: Brain, label: "Connecting to Knowledge Agent", duration: 1500 },
+  { icon: Lock, label: "Searching security policies (Vector Search)", duration: 2000 },
+  { icon: Sparkles, label: "Extracting citations", duration: 2000 },
+  { icon: FileCheck, label: "Drafting answers with AI", duration: 3000 },
+  { icon: Zap, label: "Calculating confidence scores", duration: 1500 },
 ];
+
+interface Question {
+  id: number;
+  category: string;
+  question: string;
+}
 
 export default function ProcessingPage() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
   const [progress, setProgress] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState("");
 
   useEffect(() => {
     // Check if we have questions
@@ -29,46 +37,105 @@ export default function ProcessingPage() {
       return;
     }
 
-    let totalDuration = 0;
-    const totalTime = processingSteps.reduce((acc, step) => acc + step.duration, 0);
+    const questions: Question[] = JSON.parse(stored);
+    processQuestionnaire(questions);
+  }, [router]);
 
-    // Progress through steps
-    const stepTimeouts: NodeJS.Timeout[] = [];
-    
-    processingSteps.forEach((step, index) => {
-      const timeout = setTimeout(() => {
-        setCurrentStep(index);
-      }, totalDuration);
-      stepTimeouts.push(timeout);
-      totalDuration += step.duration;
-    });
+  const processQuestionnaire = async (questions: Question[]) => {
+    try {
+      // Start progress animation
+      const progressInterval = setInterval(() => {
+        setProgress((prev) => {
+          if (prev >= 90) return 90; // Cap at 90% until complete
+          return prev + 2;
+        });
+      }, 200);
 
-    // Smooth progress bar
-    const progressInterval = setInterval(() => {
-      setProgress((prev) => {
-        const newProgress = prev + (100 / (totalTime / 50));
-        if (newProgress >= 100) {
-          clearInterval(progressInterval);
-          return 100;
+      // Animate through steps
+      let stepIndex = 0;
+      const stepInterval = setInterval(() => {
+        if (stepIndex < processingSteps.length - 1) {
+          stepIndex++;
+          setCurrentStep(stepIndex);
         }
-        return newProgress;
-      });
-    }, 50);
+      }, 1800);
 
-    // Complete and navigate
-    const completeTimeout = setTimeout(() => {
+      setStatusMessage(`Processing ${questions.length} questions...`);
+
+      // Call the API
+      const response = await fetch("/api/process", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ questions }),
+      });
+
+      clearInterval(stepInterval);
+      clearInterval(progressInterval);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to process questionnaire");
+      }
+
+      const result = await response.json();
+
+      // Store results
+      localStorage.setItem("secureOS_results", JSON.stringify(result.results));
+      localStorage.setItem("secureOS_metadata", JSON.stringify({
+        request_id: result.request_id,
+        total_questions: result.total_questions,
+        escalations_required: result.escalations_required,
+      }));
+
+      // Complete animation
+      setProgress(100);
+      setCurrentStep(processingSteps.length - 1);
       setIsComplete(true);
+
+      // Navigate to results
       setTimeout(() => {
         router.push("/results");
       }, 800);
-    }, totalTime);
 
-    return () => {
-      stepTimeouts.forEach(clearTimeout);
-      clearTimeout(completeTimeout);
-      clearInterval(progressInterval);
-    };
-  }, [router]);
+    } catch (err) {
+      console.error("Processing error:", err);
+      setError(err instanceof Error ? err.message : "An error occurred");
+    }
+  };
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-[var(--background)] grid-pattern flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-6">
+            <AlertCircle className="w-8 h-8 text-red-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-800 mb-4">Processing Failed</h2>
+          <p className="text-slate-500 mb-6">{error}</p>
+          <p className="text-sm text-slate-400 mb-6">
+            Make sure the API server is running at localhost:8000
+          </p>
+          <div className="flex gap-4 justify-center">
+            <Link href="/upload" className="btn-secondary py-3 px-6">
+              Try Again
+            </Link>
+            <button 
+              onClick={() => {
+                // Use demo mode
+                localStorage.setItem("secureOS_demo_mode", "true");
+                router.push("/results");
+              }}
+              className="btn-primary py-3 px-6"
+            >
+              Use Demo Mode
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[var(--background)] grid-pattern relative flex flex-col">
@@ -223,7 +290,7 @@ export default function ProcessingPage() {
                 />
               </div>
               <div className="mt-4 flex justify-between text-sm text-slate-500">
-                <span>Processing</span>
+                <span>{statusMessage || "Processing"}</span>
                 <span>{Math.round(progress)}%</span>
               </div>
             </div>

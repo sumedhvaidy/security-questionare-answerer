@@ -40,9 +40,12 @@ async def lifespan(app: FastAPI):
     print(f"📦 Batch size: {settings.batch_size}")
     print(f"📊 Confidence threshold: {settings.confidence_threshold}")
     
-    # Connect to MongoDB for async operations
+    # Connect to MongoDB for async operations (for escalation agent employee routing)
     try:
-        await db.connect()
+        if settings.mongodb_uri:
+            await db.connect(settings.mongodb_uri, settings.mongodb_db_name)
+        else:
+            print("⚠️  MongoDB URI not configured - escalation routing disabled")
     except Exception as e:
         print(f"⚠️  MongoDB connection failed: {e}")
     

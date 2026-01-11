@@ -1,5 +1,6 @@
 """
 Escalation Agent - Routes low-confidence answers to appropriate humans.
+Accepts citation agentic AI request format.
 """
 from typing import List, Dict, Optional
 import httpx
@@ -13,6 +14,11 @@ from src.models.api import (
     BatchResult,
     EscalationResult,
     EscalationResponse,
+)
+from src.models.escalation_request import (
+    EscalationRequest,
+    AnswerItem,
+    Citation as EscalationCitation,
 )
 
 
@@ -28,13 +34,100 @@ class EscalationAgent:
         self.confidence_threshold = confidence_threshold
         self.firework_base_url = "https://api.fireworks.ai/inference/v1"
     
+    async def process_batch(
+        self,
+        request: EscalationRequest
+    ) -> EscalationResponse:
+        """
+        Process an escalation request from citation agentic AI and determine escalations.
+        
+        Args:
+            request: EscalationRequest from citation agentic AI with batches of answers
+        
+        Returns:
+            EscalationResponse with escalation decisions and employee routing info
+        """
+        escalation_results: List[EscalationResult] = []
+        
+        for batch in request.batches:
+            for answer_item in batch.answers:
+                # Extract category from citations or question text
+                category = self._extract_category_from_answer(answer_item)
+                
+                # Check threshold-based escalation
+                threshold_escalation = answer_item.confidence_score < self.confidence_threshold
+                
+                # Use Firework AI to make intelligent escalation decision
+                citations_context = self._format_citations_context_from_escalation(answer_item.citations)
+                firework_decision = await self._check_with_firework(
+                    answer_item.question_text,
+                    answer_item.answer,
+                    answer_item.confidence_score,
+                    category,
+                    citations_context=citations_context,
+                    reasoning=answer_item.reasoning
+                )
+                
+                # Final decision: escalate if either threshold or Firework says so
+                requires_escalation = threshold_escalation or firework_decision.get("requires_escalation", False)
+                
+                routed_to = None
+                department = None
+                escalation_reason = None
+                
+                if requires_escalation:
+                    routed_to = await self._route_to_employee(
+                        answer_item.question_text,
+                        category,
+                        firework_decision.get("department")
+                    )
+                    department = routed_to.get("department") if routed_to else None
+                    escalation_reason = firework_decision.get(
+                        "reason",
+                        f"Low confidence score: {answer_item.confidence_score:.2f}"
+                    )
+                
+                # Convert citations to common Citation format
+                citations = [
+                    Citation(
+                        doc_id=c.doc_id,
+                        doc_title=c.doc_title,
+                        relevant_excerpt=c.relevant_excerpt,
+                        relevance_score=c.relevance_score
+                    ) for c in answer_item.citations
+                ]
+                
+                escalation_results.append(EscalationResult(
+                    question_id=answer_item.question_id,
+                    question_text=answer_item.question_text,
+                    answer=answer_item.answer,
+                    confidence=answer_item.confidence,
+                    confidence_score=answer_item.confidence_score,
+                    requires_escalation=requires_escalation,
+                    escalation_reason=escalation_reason,
+                    routed_to=routed_to,
+                    department=department,
+                    category=category,
+                    citations=citations
+                ))
+        
+        escalations_required = sum(1 for r in escalation_results if r.requires_escalation)
+        
+        return EscalationResponse(
+            request_id=request.request_id,
+            total_questions=request.total_questions,
+            escalations_required=escalations_required,
+            results=escalation_results,
+            status="completed"
+        )
+    
     async def process_answers(
         self,
         request_id: str,
         batches: List[BatchResult]
     ) -> EscalationResponse:
         """
-        Process answers and determine which need escalation.
+        Process answers from the drafting stage and determine which need escalation.
         
         Args:
             request_id: The request identifier
@@ -112,8 +205,61 @@ class EscalationAgent:
             status="completed"
         )
     
+    def _extract_category_from_answer(self, answer_item: AnswerItem) -> Optional[str]:
+        """Extract category from citations, question text, or answer content."""
+        question_lower = answer_item.question_text.lower()
+        answer_lower = answer_item.answer.lower()
+        
+        category_keywords = {
+            "encryption": ["encrypt", "encryption", "encrypted", "aes", "kms", "key management"],
+            "authentication": ["auth", "authenticate", "login", "credentials", "password", "jwt", "token", "mfa"],
+            "authorization": ["authorize", "permission", "access control", "rbac", "role"],
+            "compliance": ["compliance", "gdpr", "soc2", "hipaa", "iso 27001", "certification"],
+            "data_protection": ["data protection", "pii", "personal data", "data privacy"],
+            "api_security": ["api", "endpoint", "rate limit", "api key"],
+            "network_security": ["network", "firewall", "vpn", "ssl", "tls"],
+            "infrastructure": ["infrastructure", "cloud", "aws", "azure", "gcp", "server"],
+            "database": ["database", "sql", "nosql", "backup", "replication"],
+            "incident_response": ["incident", "breach", "notification", "response"],
+        }
+        
+        # Check question first
+        for category, keywords in category_keywords.items():
+            if any(keyword in question_lower for keyword in keywords):
+                return category
+        
+        # Check answer content
+        for category, keywords in category_keywords.items():
+            if any(keyword in answer_lower for keyword in keywords):
+                return category
+        
+        # Check citation titles
+        for citation in answer_item.citations:
+            citation_lower = citation.doc_title.lower()
+            for category, keywords in category_keywords.items():
+                if any(keyword in citation_lower for keyword in keywords):
+                    return category
+        
+        return None
+    
     def _format_citations_context(self, citations: List[Citation]) -> str:
         """Format citations for context in Firework AI prompt."""
+        if not citations:
+            return "No citations provided."
+        
+        context_parts = []
+        for i, citation in enumerate(citations, 1):
+            excerpt = citation.relevant_excerpt[:200] + "..." if len(citation.relevant_excerpt) > 200 else citation.relevant_excerpt
+            context_parts.append(
+                f"Citation {i}: {citation.doc_title}\n"
+                f"  Excerpt: {excerpt}\n"
+                f"  Relevance: {citation.relevance_score:.2f}"
+            )
+        
+        return "\n\n".join(context_parts)
+    
+    def _format_citations_context_from_escalation(self, citations: List[EscalationCitation]) -> str:
+        """Format escalation citations for context in Firework AI prompt."""
         if not citations:
             return "No citations provided."
         
@@ -162,45 +308,87 @@ Respond in JSON format:
     "department": "Suggested department (e.g., Security, Compliance, Engineering) or null"
 }}"""
 
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    f"{self.firework_base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.firework_api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": "accounts/fireworks/models/llama-v3-70b-instruct",
-                        "messages": [
-                            {"role": "system", "content": "You are an expert security analyst. Respond only with valid JSON."},
-                            {"role": "user", "content": prompt}
-                        ],
-                        "temperature": 0.3,
-                        "max_tokens": 200
-                    }
-                )
-                
-                if response.status_code != 200:
-                    raise Exception(f"Fireworks API error: {response.status_code}")
-                
-                response_data = response.json()
-                result_text = response_data["choices"][0]["message"]["content"].strip()
-                
-                if "```json" in result_text:
-                    result_text = result_text.split("```json")[1].split("```")[0].strip()
-                elif "```" in result_text:
-                    result_text = result_text.split("```")[1].split("```")[0].strip()
-                
-                return json.loads(result_text)
+        # Try multiple models with fallback
+        model_names = [
+            "accounts/fireworks/models/deepseek-v3p2",
+            "accounts/fireworks/models/llama-v3-70b-instruct",
+            "fireworks/llama-v3-70b-instruct",
+        ]
         
-        except Exception as e:
-            print(f"Firework AI error: {e}. Using threshold-based decision.")
-            return {
-                "requires_escalation": confidence < self.confidence_threshold,
-                "reason": f"Fallback: Confidence {confidence:.2f} below threshold",
-                "department": self._suggest_department_from_category(category)
-            }
+        last_error = None
+        for model_name in model_names:
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.post(
+                        f"{self.firework_base_url}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {self.firework_api_key}",
+                            "Content-Type": "application/json"
+                        },
+                        json={
+                            "model": model_name,
+                            "messages": [
+                                {
+                                    "role": "system",
+                                    "content": "You are an expert security analyst. Respond only with valid JSON."
+                                },
+                                {
+                                    "role": "user",
+                                    "content": prompt
+                                }
+                            ],
+                            "temperature": 0.3,
+                            "max_tokens": 200
+                        }
+                    )
+                    
+                    if response.status_code == 200:
+                        response_data = response.json()
+                        result_text = response_data["choices"][0]["message"]["content"].strip()
+                        
+                        # Extract JSON from response
+                        if "```json" in result_text:
+                            result_text = result_text.split("```json")[1].split("```")[0].strip()
+                        elif "```" in result_text:
+                            result_text = result_text.split("```")[1].split("```")[0].strip()
+                        
+                        result_text = result_text.strip()
+                        if result_text.startswith("{"):
+                            decision = json.loads(result_text)
+                            if not hasattr(self, '_fireworks_success_logged'):
+                                print(f"✅ Fireworks AI model '{model_name}' working successfully")
+                                self._fireworks_success_logged = True
+                            return decision
+                        else:
+                            last_error = f"Invalid JSON format from model {model_name}"
+                            continue
+                    elif response.status_code == 404:
+                        last_error = f"Model {model_name} not found (404)"
+                        continue
+                    else:
+                        try:
+                            error_data = response.json()
+                            error_msg = error_data.get("error", {}).get("message", response.text[:100])
+                            last_error = f"Model {model_name}: {error_msg}"
+                        except:
+                            last_error = f"Model {model_name}: HTTP {response.status_code}"
+                        continue
+            except json.JSONDecodeError:
+                continue
+            except Exception as e:
+                last_error = f"Error with {model_name}: {str(e)[:50]}"
+                continue
+        
+        # Fallback to threshold-based decision
+        if not hasattr(self, '_fireworks_warning_shown'):
+            print(f"⚠️  Fireworks AI models unavailable ({last_error}). Using threshold-based escalation.")
+            self._fireworks_warning_shown = True
+        
+        return {
+            "requires_escalation": confidence < self.confidence_threshold,
+            "reason": f"Threshold-based: Confidence {confidence:.2f} {'below' if confidence < self.confidence_threshold else 'above'} threshold {self.confidence_threshold}",
+            "department": self._suggest_department_from_category(category)
+        }
     
     async def _route_to_employee(
         self, 
@@ -211,42 +399,52 @@ Respond in JSON format:
         """Route escalation to the most appropriate employee."""
         department = suggested_department or self._suggest_department_from_category(category) or "Security"
         
+        # Check if database is connected
+        if db.database is None:
+            print("⚠️  MongoDB not connected - using fallback employee routing")
+            # Return None so frontend knows employee routing failed
+            return None
+        
         employees_collection = db.database.employees
         
         # Try to find employee by category/expertise match
+        employee_doc = None
+        
+        # Strategy 1: Match by expertise areas
         if category:
             employee_doc = await employees_collection.find_one({
-                "$or": [
-                    {"expertise_areas": {"$regex": category, "$options": "i"}},
-                    {"department": {"$regex": department, "$options": "i"}}
-                ]
-            })
-        else:
-            employee_doc = await employees_collection.find_one({
-                "department": {"$regex": department, "$options": "i"}
+                "expertise_areas": {"$regex": category, "$options": "i"}
             })
         
+        # Strategy 2: Match by department
         if not employee_doc:
             employee_doc = await employees_collection.find_one({
                 "department": {"$regex": department, "$options": "i"}
             })
         
+        # Strategy 3: Any Security team member
         if not employee_doc:
             employee_doc = await employees_collection.find_one({
-                "$or": [
-                    {"department": "Security"},
-                    {"expertise_areas": {"$ne": []}}
-                ]
+                "department": {"$regex": "security", "$options": "i"}
             })
+        
+        # Strategy 4: Just get any employee
+        if not employee_doc:
+            employee_doc = await employees_collection.find_one({})
         
         if employee_doc:
             return {
                 "id": str(employee_doc.get("_id")),
                 "name": employee_doc.get("name"),
                 "email": employee_doc.get("email"),
+                "title": employee_doc.get("role") or employee_doc.get("title"),
                 "role": employee_doc.get("role"),
                 "department": employee_doc.get("department")
             }
+        
+        # No employees in database
+        print("⚠️  No employees found in database")
+        return None
         
         return None
     
@@ -265,7 +463,7 @@ Respond in JSON format:
             "data_handling": "Security",
             "access_control": "Security",
             "api_security": "Engineering",
-            "network": "Security",
+            "network_security": "Security",
             "compliance": "Compliance",
             "incident_response": "Security",
             "logging": "Engineering",
@@ -278,4 +476,3 @@ Respond in JSON format:
                 return dept
         
         return "Security"
-

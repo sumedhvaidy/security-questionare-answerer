@@ -31,50 +31,131 @@ export default function UploadPage() {
     setIsDragging(false);
   }, []);
 
+  const parseCSV = (text: string): string[][] => {
+    const rows: string[][] = [];
+    let currentRow: string[] = [];
+    let currentCell = "";
+    let inQuotes = false;
+
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      const nextChar = text[i + 1];
+
+      if (char === '"') {
+        if (inQuotes && nextChar === '"') {
+          currentCell += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        currentRow.push(currentCell.trim());
+        currentCell = "";
+      } else if ((char === '\n' || (char === '\r' && nextChar === '\n')) && !inQuotes) {
+        currentRow.push(currentCell.trim());
+        if (currentRow.some(cell => cell.length > 0)) {
+          rows.push(currentRow);
+        }
+        currentRow = [];
+        currentCell = "";
+        if (char === '\r') i++;
+      } else {
+        currentCell += char;
+      }
+    }
+
+    if (currentCell || currentRow.length > 0) {
+      currentRow.push(currentCell.trim());
+      if (currentRow.some(cell => cell.length > 0)) {
+        rows.push(currentRow);
+      }
+    }
+
+    return rows;
+  };
+
   const processFile = async (selectedFile: File) => {
     setError(null);
     setIsProcessing(true);
 
     try {
-      const arrayBuffer = await selectedFile.arrayBuffer();
-      const workbook = XLSX.read(arrayBuffer, { type: "array" });
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as string[][];
+      const fileName = selectedFile.name.toLowerCase();
+      let data: string[][] = [];
 
-      // Parse questions - assume first column is category, second is question
-      // Or if only one column, treat as question
+      if (fileName.endsWith('.csv')) {
+        // Parse CSV file
+        const text = await selectedFile.text();
+        data = parseCSV(text);
+      } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+        // Parse Excel file
+        const arrayBuffer = await selectedFile.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer, { type: "array" });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as string[][];
+      } else {
+        setError("Please upload a CSV or XLSX file");
+        setIsProcessing(false);
+        return;
+      }
+
+      // Detect column format from headers
+      const headers = data[0]?.map(h => h?.toString().toLowerCase().trim()) || [];
       const parsedQuestions: ParsedQuestion[] = [];
+      
+      // Find column indices based on headers
+      let idCol = headers.findIndex(h => h === 'id' || h === 'question_id' || h === '#');
+      let categoryCol = headers.findIndex(h => h === 'category' || h === 'type' || h === 'section');
+      let questionCol = headers.findIndex(h => h === 'question' || h === 'question_text' || h === 'questions');
+      
+      // Fallback: if no "question" header found, try to detect format
+      if (questionCol === -1) {
+        if (headers.length >= 3 && idCol !== -1) {
+          // Format: id, category, question
+          categoryCol = categoryCol !== -1 ? categoryCol : 1;
+          questionCol = 2;
+        } else if (headers.length >= 2) {
+          // Format: category, question
+          categoryCol = 0;
+          questionCol = 1;
+        } else {
+          // Format: just questions
+          questionCol = 0;
+        }
+      }
+      
+      console.log(`Detected columns - ID: ${idCol}, Category: ${categoryCol}, Question: ${questionCol}`);
       
       for (let i = 1; i < data.length; i++) {
         const row = data[i];
         if (row && row.length > 0) {
-          if (row.length >= 2 && row[1]) {
+          const questionText = questionCol >= 0 ? row[questionCol]?.toString().trim() : "";
+          const categoryText = categoryCol >= 0 ? row[categoryCol]?.toString().trim() : "General";
+          const rowId = idCol >= 0 ? parseInt(row[idCol]?.toString()) || i : i;
+          
+          if (questionText) {
             parsedQuestions.push({
-              id: i,
-              category: row[0]?.toString() || "General",
-              question: row[1]?.toString() || ""
-            });
-          } else if (row[0]) {
-            parsedQuestions.push({
-              id: i,
-              category: "General",
-              question: row[0]?.toString() || ""
+              id: rowId,
+              category: categoryText || "General",
+              question: questionText
             });
           }
         }
       }
 
       if (parsedQuestions.length === 0) {
-        setError("No questions found in the file. Please check the format.");
+        setError("No questions found in the file. Please check the format (Category, Question columns or just Question column).");
       } else {
         setQuestions(parsedQuestions);
         // Store in localStorage for the next page
         localStorage.setItem("secureOS_questions", JSON.stringify(parsedQuestions));
+        // Clear any previous results
+        localStorage.removeItem("secureOS_results");
+        localStorage.removeItem("secureOS_metadata");
       }
     } catch (err) {
       console.error(err);
-      setError("Failed to parse the file. Please ensure it's a valid XLSX file.");
+      setError("Failed to parse the file. Please ensure it's a valid CSV or XLSX file.");
     } finally {
       setIsProcessing(false);
     }
@@ -85,11 +166,12 @@ export default function UploadPage() {
     setIsDragging(false);
 
     const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile && droppedFile.name.endsWith(".xlsx")) {
+    const fileName = droppedFile?.name.toLowerCase() || "";
+    if (droppedFile && (fileName.endsWith(".xlsx") || fileName.endsWith(".csv") || fileName.endsWith(".xls"))) {
       setFile(droppedFile);
       processFile(droppedFile);
     } else {
-      setError("Please upload an XLSX file");
+      setError("Please upload a CSV or XLSX file");
     }
   }, []);
 
@@ -160,8 +242,8 @@ export default function UploadPage() {
         >
           <h1 className="text-4xl font-bold mb-4 text-slate-800">Upload Your Questionnaire</h1>
           <p className="text-slate-500 max-w-xl mx-auto">
-            Upload an XLSX file containing your security questions. 
-            Our AI will analyze and generate responses instantly.
+            Upload a CSV or XLSX file containing your security questions. 
+            Our AI agents will analyze and generate responses with confidence scores.
           </p>
         </motion.div>
 
@@ -185,7 +267,7 @@ export default function UploadPage() {
           >
             <input
               type="file"
-              accept=".xlsx"
+              accept=".xlsx,.xls,.csv"
               onChange={handleFileSelect}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             />
@@ -231,9 +313,9 @@ export default function UploadPage() {
                     <Upload className={`w-8 h-8 ${isDragging ? "text-[var(--accent)]" : "text-slate-400"}`} />
                   </div>
                   <p className="text-lg font-medium mb-1 text-slate-700">
-                    {isDragging ? "Drop your file here" : "Drag & drop your XLSX file"}
+                    {isDragging ? "Drop your file here" : "Drag & drop your CSV or XLSX file"}
                   </p>
-                  <p className="text-sm text-slate-500">or click to browse</p>
+                  <p className="text-sm text-slate-500">or click to browse • Supports CSV, XLS, XLSX</p>
                 </motion.div>
               )}
             </AnimatePresence>

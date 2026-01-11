@@ -230,9 +230,19 @@ async def test_escalation():
         from src.agents.escalation_agent import EscalationAgent
         from src.models.common import Citation, ConfidenceLevel
         from src.models.api import QuestionAnswer, BatchResult
+        from src.core.database import db
+        import os
+        
+        # Connect to MongoDB for employee routing
+        mongodb_uri = os.getenv("MONGODB_URI")
+        if mongodb_uri:
+            print("\n🔌 Connecting to MongoDB...")
+            await db.connect(mongodb_uri, db_name="Employees")
+        else:
+            print("\n⚠️  MONGODB_URI not set - employee routing will use placeholder")
         
         escalation_agent = EscalationAgent(confidence_threshold=0.7)
-        print(f"\n📦 Escalation Agent initialized (threshold: 0.7)")
+        print(f"📦 Escalation Agent initialized (threshold: 0.7)")
         
         # Create sample answers with varying confidence levels
         sample_answers = [
@@ -321,6 +331,10 @@ async def test_escalation():
             else:
                 print(f"\n   ✅ NO ESCALATION: {r.question_text[:40]}...")
                 print(f"      Confidence: {r.confidence_score:.0%}")
+        
+        # Disconnect from MongoDB
+        if db.database is not None:
+            await db.disconnect()
         
         return True
         
