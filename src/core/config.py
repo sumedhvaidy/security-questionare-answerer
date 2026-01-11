@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     temperature: float = 0.6
     
     # Agent Configuration
-    confidence_threshold: float = 0.7
+    confidence_threshold: float = 0.5  # Below 50% = needs escalation
     batch_size: int = 5
     answerability_penalty: float = 0.5
     

@@ -2,9 +2,14 @@
 Script to seed MongoDB with fake employee data for the startup
 """
 import asyncio
-from database import db
-from motor.motor_asyncio import AsyncIOMotorCollection
+import sys
 import os
+
+# Add src to path for imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from src.core.database import db
+from motor.motor_asyncio import AsyncIOMotorCollection
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 

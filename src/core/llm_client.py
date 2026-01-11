@@ -78,7 +78,20 @@ class FireworksClient:
             content = content.split("```json")[1].split("```")[0]
         elif "```" in content:
             content = content.split("```")[1].split("```")[0]
-        return json.loads(content.strip())
+        
+        try:
+            return json.loads(content.strip())
+        except json.JSONDecodeError as e:
+            print(f"⚠️ JSON parse error: {e}")
+            print(f"   Raw content: {content[:500]}...")
+            # Return a default structure to prevent crashes
+            return {
+                "answer": "Unable to parse response",
+                "confidence": "low",
+                "confidence_score": 0.1,
+                "citations": [],
+                "reasoning": f"JSON parse error: {str(e)}"
+            }
 
 
 # Singleton instance

@@ -34,7 +34,7 @@ from src.agents.escalation_agent import EscalationAgent
 class OrchestratorConfig:
     """Configuration for the orchestrator."""
     batch_size: int = 5
-    confidence_threshold: float = 0.7
+    confidence_threshold: float = 0.5  # Below 50% = needs escalation, 50-70% = review
     use_knowledge_agent: bool = True  # Use MongoDB vector search
     use_citation_agent: bool = True   # Use RAG context documents
     run_escalation: bool = True       # Route to humans
@@ -56,9 +56,7 @@ class QuestionnaireOrchestrator:
         
         # Initialize agents
         if self.config.use_knowledge_agent:
-            self.knowledge_agent = KnowledgeAgent(
-                confidence_threshold=self.config.confidence_threshold
-            )
+            self.knowledge_agent = KnowledgeAgent()
         else:
             self.knowledge_agent = None
         
@@ -160,33 +158,46 @@ class QuestionnaireOrchestrator:
                 print(f"\n  Processing: {question.question_text[:50]}...")
             
             # Step 1: Knowledge Agent retrieves relevant evidence (if enabled)
-            knowledge_evidence = None
+            knowledge_result = None
             if self.knowledge_agent:
                 try:
-                    knowledge_result = self.knowledge_agent.answer_question(
+                    knowledge_result = self.knowledge_agent.retrieve(
                         question.question_text, 
                         verbose=False
                     )
-                    knowledge_evidence = knowledge_result.get("evidence", [])
                     
                     if verbose:
-                        source = knowledge_result.get("source_type", "unknown")
-                        sim = knowledge_result.get("semantic_similarity", 0)
-                        print(f"    KnowledgeAgent: {source} (similarity: {sim:.2f})")
+                        source = knowledge_result.get("source", "unknown")
+                        docs = knowledge_result.get("context_documents", [])
+                        avg_sim = sum(d.get("metadata", {}).get("similarity_score", 0) for d in docs) / max(len(docs), 1)
+                        print(f"    KnowledgeAgent: {source} (avg similarity: {avg_sim:.2f}, {len(docs)} docs)")
                 except Exception as e:
                     if verbose:
                         print(f"    KnowledgeAgent error: {e}")
-                    knowledge_evidence = None
+                    knowledge_result = None
             
             # Step 2: Citation + Drafting agents process the question
-            # Knowledge Agent now only provides evidence context, not answers
+            # Use documents from Knowledge Agent if available, else fall back to input context_docs
             if verbose:
                 print(f"    Using Citation+Drafting agents...")
             
-            # Citation Agent: Find relevant citations from context docs
-            # (Can optionally use knowledge_evidence as additional context)
+            # Convert Knowledge Agent docs to ContextDocument objects
+            docs_for_citation = context_docs  # default fallback
+            if knowledge_result and knowledge_result.get("context_documents"):
+                docs_for_citation = [
+                    ContextDocument(
+                        doc_id=doc.get("doc_id", f"doc_{i}"),
+                        title=doc.get("title", "Unknown"),
+                        content=doc.get("content", ""),
+                        source=doc.get("source", "knowledge_base"),
+                        metadata=doc.get("metadata", {})
+                    )
+                    for i, doc in enumerate(knowledge_result["context_documents"])
+                ]
+            
+            # Citation Agent: Find relevant citations from retrieved docs
             citation_result = await self.citation_agent.find_citations(
-                question, context_docs
+                question, docs_for_citation
             )
             
             # Drafting Agent: Generate answer based on citations
@@ -194,16 +205,19 @@ class QuestionnaireOrchestrator:
                 question, citation_result
             )
             
-            # Determine if escalation needed
+            # Determine if escalation needed based on Drafting Agent confidence
+            # <50% = needs escalation, 50-70% = needs review (handled in frontend)
             needs_escalation = draft_result.confidence_score < self.config.confidence_threshold
             escalation_reason = None
             
-            # Include escalation reason from Knowledge Agent if available
-            if knowledge_response and knowledge_response.needs_escalation:
-                needs_escalation = True
-                escalation_reason = knowledge_response.escalation_reason
-            elif needs_escalation:
-                escalation_reason = f"Confidence {draft_result.confidence_score:.2f} below threshold"
+            if needs_escalation:
+                confidence_pct = int(draft_result.confidence_score * 100)
+                if draft_result.confidence_score < 0.3:
+                    escalation_reason = f"Very low confidence ({confidence_pct}%) - insufficient documentation found"
+                elif draft_result.confidence_score < 0.5:
+                    escalation_reason = f"Low confidence ({confidence_pct}%) - requires human verification"
+                else:
+                    escalation_reason = f"Medium confidence ({confidence_pct}%) - may need additional review"
             
             answer = QuestionAnswer(
                 question_id=question.question_id,

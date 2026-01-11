@@ -12,6 +12,7 @@ from src.models.employee import (
     Employee,
     EmployeeCreate,
     EmployeeResponse,
+    PyObjectId,
 )
 from src.models.api import (
     # Input models
@@ -23,10 +24,17 @@ from src.models.api import (
     # Internal models
     CitationResult,
     DraftResult,
-    # Escalation models
+    # Escalation models (internal orchestrator format)
     EscalationRequest,
     EscalationResult,
     EscalationResponse,
+)
+from src.models.escalation_request import (
+    # External citation agent request format
+    EscalationRequest as CitationEscalationRequest,
+    AnswerItem,
+    Batch,
+    Citation as EscalationCitation,
 )
 
 __all__ = [
@@ -40,6 +48,7 @@ __all__ = [
     "Employee",
     "EmployeeCreate",
     "EmployeeResponse",
+    "PyObjectId",
     # API
     "QuestionnaireInput",
     "QuestionAnswer",
@@ -50,5 +59,10 @@ __all__ = [
     "EscalationRequest",
     "EscalationResult",
     "EscalationResponse",
+    # External citation agent format
+    "CitationEscalationRequest",
+    "AnswerItem",
+    "Batch",
+    "EscalationCitation",
 ]
 
