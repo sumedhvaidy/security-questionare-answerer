@@ -6,20 +6,6 @@ A multi-agent system that processes security questionnaires using AI agents for 
 
 ---
 
-## 📋 Table of Contents
-
-- [System Overview](#system-overview)
-- [Architecture](#architecture)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [Agent Responsibilities](#agent-responsibilities)
-- [API Endpoints](#api-endpoints)
-- [Development](#development)
-
----
-
-## 🎯 System Overview
-
 ### Goal
 Automate security questionnaire completion by:
 - Processing 200–1,500 questions efficiently
